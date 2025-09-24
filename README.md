@@ -1,4 +1,4 @@
-# 3. PROCEDIMIENTO ✨
+# 3. PRÁCTICA DE LABORATORIO No. 1✨
 
 > En el curso de **Interfaces** se desarrollará una serie de aplicativos para un **laboratorio virtual**.  
 > Uno de ellos será una app en **Java** para **supervisar y gestionar** un hardware conectado por **puerto serie**.

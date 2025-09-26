@@ -11,6 +11,7 @@ import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
+import com.myproject.laboratorio1.botonGuardar;
 
 /**
  *
@@ -170,6 +171,16 @@ public class Laboratorio1 extends javax.swing.JFrame {
             .addComponent(bg, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
         );
 
+        // ====== Botón Guardar CSV ======
+        btnGuardar = new javax.swing.JButton();
+        btnGuardar.setText("Guardar datos (CSV)");
+        btnGuardar.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnGuardarActionPerformed(evt);
+            }
+        });
+        jPanel1.add(btnGuardar);
+
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
@@ -182,7 +193,8 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
         // TODO add your handling code here:
         // --------- Señal Analógica ----------
-        XYSeries serieAnalogica = new XYSeries("Señal Analógica");
+        serieAnalogica = new XYSeries("Señal Analógica");
+        serieDigital = serieAnalogica; // Por ahora, usar la misma serie para simplificar.
         // --------- Generar datos aleatorios por ahora ----------
         Random random = new Random();                                                                                            
         for (int i = 0; i < 10; i++) {
@@ -204,6 +216,11 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed
         // TODO add your handling code here:
     }//GEN-LAST:event_jComboBox1ActionPerformed
+    
+    private void btnGuardarActionPerformed(java.awt.event.ActionEvent evt) {
+        botonGuardar.guardarComoCSV(serieAnalogica, serieDigital, this);
+}
+
 
     /**
      * @param args the command line arguments
@@ -263,5 +280,8 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private javax.swing.JPanel panelSenales;
     private javax.swing.JPanel panelSuperior;
     private javax.swing.JLabel titulo;
-    // End of variables declaration//GEN-END:variables
+    // ===== NUEVOS ATRIBUTOS para Guardar los Datos=====
+    private XYSeries serieAnalogica;
+    private XYSeries serieDigital;
+    private javax.swing.JButton btnGuardar;
 }

@@ -12,14 +12,7 @@ import java.io.FileOutputStream;
 
 public class botonGuardar {
 
-    /**
-     * Guarda un archivo Excel (.xlsx) con dos hojas:
-     *   - "Analogica": columnas [t, y_analogica]
-     *   - "Digital":   columnas [t, y_digital]
-     * Mantiene el nombre del método por compatibilidad.
-     */
     public static void guardarComoCSV(XYSeries serieAnalogica, XYSeries serieDigital, java.awt.Component parent) {
-        // Diálogo para escoger archivo .xlsx
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Guardar datos de señales (XLSX)");
         fc.setSelectedFile(new File("senales.xlsx"));
@@ -33,16 +26,13 @@ public class botonGuardar {
             file = new File(file.getParentFile(), file.getName() + ".xlsx");
         }
 
-        try (Workbook wb = new XSSFWorkbook()) {
-            // Estilos opcionales (negrita para encabezado)
-            CellStyle headerStyle = wb.createCellStyle();
-            Font bold = wb.createFont();
-            bold.setBold(true);
-            headerStyle.setFont(bold);
+        // 🔑 aquí garantizamos que no se sobrescriba
+        file = obtenerArchivoDisponible(file);
 
-            // ===== Hoja Analógica =====
+        try (Workbook wb = new XSSFWorkbook()) {
+            // Crear hojas...
             Sheet shA = wb.createSheet("Analogica");
-            crearEncabezados(shA, headerStyle, "t", "y_analogica");
+            crearEncabezados(shA, "t", "y_analogica");
             if (serieAnalogica != null && serieAnalogica.getItemCount() > 0) {
                 for (int i = 0; i < serieAnalogica.getItemCount(); i++) {
                     Row r = shA.createRow(i + 1);
@@ -52,12 +42,9 @@ public class botonGuardar {
             } else {
                 filaSinDatos(shA);
             }
-            shA.autoSizeColumn(0);
-            shA.autoSizeColumn(1);
 
-            // ===== Hoja Digital =====
             Sheet shD = wb.createSheet("Digital");
-            crearEncabezados(shD, headerStyle, "t", "y_digital");
+            crearEncabezados(shD, "t", "y_digital");
             if (serieDigital != null && serieDigital.getItemCount() > 0) {
                 for (int i = 0; i < serieDigital.getItemCount(); i++) {
                     Row r = shD.createRow(i + 1);
@@ -67,10 +54,7 @@ public class botonGuardar {
             } else {
                 filaSinDatos(shD);
             }
-            shD.autoSizeColumn(0);
-            shD.autoSizeColumn(1);
 
-            // Escribir archivo
             try (FileOutputStream fos = new FileOutputStream(file)) {
                 wb.write(fos);
             }
@@ -87,16 +71,33 @@ public class botonGuardar {
         }
     }
 
-    private static void crearEncabezados(Sheet sh, CellStyle headerStyle, String col1, String col2) {
+    // ===== Métodos auxiliares =====
+    private static void crearEncabezados(Sheet sh, String col1, String col2) {
         Row h = sh.createRow(0);
-        Cell c0 = h.createCell(0); c0.setCellValue(col1); c0.setCellStyle(headerStyle);
-        Cell c1 = h.createCell(1); c1.setCellValue(col2); c1.setCellStyle(headerStyle);
+        h.createCell(0).setCellValue(col1);
+        h.createCell(1).setCellValue(col2);
     }
 
     private static void filaSinDatos(Sheet sh) {
         Row r = sh.createRow(1);
         r.createCell(0).setCellValue("Sin datos");
-        // dejamos la segunda columna vacía para mantener el formato
+    }
+
+    /**
+     * Devuelve un archivo disponible. 
+     * Si file.xlsx existe, devuelve file_1.xlsx, luego file_2.xlsx, etc.
+     */
+    private static File obtenerArchivoDisponible(File file) {
+        File candidate = file;
+        int counter = 1;
+        while (candidate.exists()) {
+            String name = file.getName();
+            int dot = name.lastIndexOf(".");
+            String base = (dot == -1) ? name : name.substring(0, dot);
+            String ext  = (dot == -1) ? ""   : name.substring(dot);
+            candidate = new File(file.getParent(), base + "_" + counter + ext);
+            counter++;
+        }
+        return candidate;
     }
 }
-

@@ -463,8 +463,5 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private javax.swing.JPanel panelSenales;
     private javax.swing.JPanel panelSuperior;
     private javax.swing.JLabel titulo;
-    // ===== NUEVOS ATRIBUTOS para Guardar los Datos=====
-    private XYSeries serieAnalogica;
-    private XYSeries serieDigital;
     private javax.swing.JButton btnGuardar;
 }

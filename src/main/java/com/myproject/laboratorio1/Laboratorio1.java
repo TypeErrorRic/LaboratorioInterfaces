@@ -245,6 +245,16 @@ public class Laboratorio1 extends javax.swing.JFrame {
             .addComponent(bg, javax.swing.GroupLayout.DEFAULT_SIZE, 501, Short.MAX_VALUE)
         );
 
+        // ====== Botón Guardar CSV ======
+        btnGuardar = new javax.swing.JButton();
+        btnGuardar.setText("Guardar datos (CSV)");
+        btnGuardar.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnGuardarActionPerformed(evt);
+            }
+        });
+        jPanel1.add(btnGuardar);
+
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
@@ -432,5 +442,8 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private javax.swing.JPanel panelSenales;
     private javax.swing.JPanel panelSuperior;
     private javax.swing.JLabel titulo;
-    // End of variables declaration//GEN-END:variables
+    // ===== NUEVOS ATRIBUTOS para Guardar los Datos=====
+    private XYSeries serieAnalogica;
+    private XYSeries serieDigital;
+    private javax.swing.JButton btnGuardar;
 }

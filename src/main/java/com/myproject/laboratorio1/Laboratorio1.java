@@ -5,15 +5,8 @@
 package com.myproject.laboratorio1;
 
 import java.awt.BorderLayout;
-import java.util.Random;
-import org.jfree.chart.ChartFactory;
-import org.jfree.chart.ChartPanel;
-import org.jfree.chart.JFreeChart;
-import org.jfree.data.xy.XYSeries;
-import org.jfree.data.xy.XYSeriesCollection;
 
 /**
- *
  * @author Arley
  */
 public class Laboratorio1 extends javax.swing.JFrame {
@@ -21,8 +14,16 @@ public class Laboratorio1 extends javax.swing.JFrame {
     /**
      * Creates new form Laboratorio1
      */
+    private LineGraph graficaAnalogica;
+    private LineGraph graficaDigital;
+    
     public Laboratorio1() {
         initComponents();
+        // Instaciar las dos graficas
+        graficaAnalogica = new LineGraph("Señal analogica", "Tiempo", "Valor", 100);
+        graficaDigital = new LineGraph("Señal digital", "Tiempo", "Valor", 100);
+        panelSenalAnalogica.add(graficaAnalogica.getChartPanel(), BorderLayout.CENTER);
+        panelSenalDigital.add(graficaDigital.getChartPanel(), BorderLayout.CENTER);
     }
 
     /**
@@ -33,7 +34,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
     @SuppressWarnings("unchecked")
     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
     private void initComponents() {
-        java.awt.GridBagConstraints gridBagConstraints;
 
         bg = new javax.swing.JPanel();
         panelSuperior = new javax.swing.JPanel();
@@ -59,9 +59,9 @@ public class Laboratorio1 extends javax.swing.JFrame {
         panelInferior = new javax.swing.JPanel();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setPreferredSize(new java.awt.Dimension(1280, 720));
 
         bg.setBackground(new java.awt.Color(255, 255, 255));
+        bg.setPreferredSize(new java.awt.Dimension(1280, 720));
         bg.setLayout(new java.awt.BorderLayout());
 
         titulo.setFont(new java.awt.Font("Roboto Black", 1, 24)); // NOI18N
@@ -181,24 +181,10 @@ public class Laboratorio1 extends javax.swing.JFrame {
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
         // TODO add your handling code here:
-        // --------- Señal Analógica ----------
-        XYSeries serieAnalogica = new XYSeries("Señal Analógica");
-        // --------- Generar datos aleatorios por ahora ----------
-        Random random = new Random();                                                                                            
-        for (int i = 0; i < 10; i++) {
-            serieAnalogica.add(i, random.nextDouble() * 5); // valores aleatorios
-        }
-        XYSeriesCollection datasetAnalogico = new XYSeriesCollection(serieAnalogica);
-        JFreeChart chartAnalogico = ChartFactory.createXYLineChart(
-                "Señal Analógica",
-                "Tiempo",
-                "Valor",
-                datasetAnalogico
-        );
-        ChartPanel chartPanelAnalogico = new ChartPanel(chartAnalogico);
-        ChartPanel chartPanelDigital = new ChartPanel(chartAnalogico);
-        panelSenalAnalogica.add(chartPanelAnalogico, BorderLayout.CENTER);
-        panelSenalDigital.add(chartPanelDigital, BorderLayout.CENTER);
+        double x = System.currentTimeMillis()/1000.0;
+        double y = Math.random()*10;
+        graficaAnalogica.addDato(x,y);
+        graficaDigital.addDato(x,y);
     }//GEN-LAST:event_jButton1ActionPerformed
 
     private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed

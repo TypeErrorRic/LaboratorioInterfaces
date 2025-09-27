@@ -264,7 +264,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 BotonCambiarMuestreoAnalogicoActionPerformed(evt);
             }
         });
-        panelInferior.add(BotonCambiarMuestroDigital);
+        panelInferior.add(BotonCambiarMuestreoAnalogico);
 
         BotonCambiarMuestroDigital.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {

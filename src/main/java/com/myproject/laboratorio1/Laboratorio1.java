@@ -6,6 +6,10 @@ package com.myproject.laboratorio1;
 
 import java.awt.BorderLayout;
 
+import org.jfree.data.xy.XYSeries;
+
+import com.myproject.laboratorio1.botonGuardar;
+
 /**
  * @author Arley
  */
@@ -255,9 +259,26 @@ public class Laboratorio1 extends javax.swing.JFrame {
         });
         jPanel1.add(btnGuardar);
 
+        BotonCambiarMuestreoAnalogico.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                BotonCambiarMuestreoAnalogicoActionPerformed(evt);
+            }
+        });
+        panelInferior.add(BotonCambiarMuestroDigital);
+
+        BotonCambiarMuestroDigital.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                BotonCambiarMuestroDigitalActionPerformed(evt);
+            }
+        });
+        panelInferior.add(BotonCambiarMuestroDigital);
+
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
+    private void btnGuardarActionPerformed(java.awt.event.ActionEvent evt) {
+        botonGuardar.guardarComoCSV(graficaAnalogica.getSeriexy(), graficaDigital.getSeriexy(), this);
+    }
     
     private void jToggleButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
         // TODO add your handling code here:

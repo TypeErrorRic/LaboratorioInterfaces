@@ -71,4 +71,8 @@ public class LineGraph {
     public void addDato(double x, double y) {
         series.add(x, y);
     }
+
+    public XYSeries getSeriexy(){
+        return series;
+    }
 }

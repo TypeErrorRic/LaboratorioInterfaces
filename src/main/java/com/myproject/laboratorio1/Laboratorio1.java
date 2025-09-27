@@ -33,7 +33,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
     @SuppressWarnings("unchecked")
     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
     private void initComponents() {
-        java.awt.GridBagConstraints gridBagConstraints;
 
         bg = new javax.swing.JPanel();
         panelSuperior = new javax.swing.JPanel();
@@ -57,9 +56,16 @@ public class Laboratorio1 extends javax.swing.JFrame {
         jToggleButton4 = new javax.swing.JToggleButton();
         jButton1 = new javax.swing.JButton();
         panelInferior = new javax.swing.JPanel();
+        EtiquetaValorMuestreoAnalogico = new javax.swing.JLabel();
+        ValorMuestreoAnalogico = new javax.swing.JTextField();
+        BotonCambiarMuestreoAnalogico = new javax.swing.JButton();
+        TiempoMuestreoActualAnalogico = new javax.swing.JLabel();
+        EtiquetaValorMuestreoDigital = new javax.swing.JLabel();
+        TiempoMuestreoActualDigital = new javax.swing.JLabel();
+        ValorMuestreoDigital = new javax.swing.JTextField();
+        BotonCambiarMuestroDigital = new javax.swing.JButton();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setPreferredSize(new java.awt.Dimension(1280, 720));
 
         bg.setBackground(new java.awt.Color(255, 255, 255));
         bg.setLayout(new java.awt.BorderLayout());
@@ -81,7 +87,8 @@ public class Laboratorio1 extends javax.swing.JFrame {
         jLabel6.setText("Señal analógica");
         jPanel4.add(jLabel6);
 
-        jComboBox1.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "Item 1", "Item 2", "Item 3", "Item 4" }));
+        jComboBox1.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "1", "2", "3", "4", "5", "6", "7", "8" }));
+        jComboBox1.setPreferredSize(new java.awt.Dimension(40, 22));
         jComboBox1.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jComboBox1ActionPerformed(evt);
@@ -99,7 +106,13 @@ public class Laboratorio1 extends javax.swing.JFrame {
         jLabel7.setText("Señal digital");
         jPanel2.add(jLabel7);
 
-        jComboBox2.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "Item 1", "Item 2", "Item 3", "Item 4" }));
+        jComboBox2.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "1", "2", "3", "4" }));
+        jComboBox2.setPreferredSize(new java.awt.Dimension(40, 22));
+        jComboBox2.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jComboBox2ActionPerformed(evt);
+            }
+        });
         jPanel2.add(jComboBox2);
 
         panelSenalDigital.add(jPanel2, java.awt.BorderLayout.PAGE_START);
@@ -146,15 +159,75 @@ public class Laboratorio1 extends javax.swing.JFrame {
 
         bg.add(panelCentral, java.awt.BorderLayout.CENTER);
 
+        EtiquetaValorMuestreoAnalogico.setText("Tiempo de Muestreo");
+
+        ValorMuestreoAnalogico.setHorizontalAlignment(javax.swing.JTextField.CENTER);
+        ValorMuestreoAnalogico.setToolTipText("ValorMuestreo");
+        ValorMuestreoAnalogico.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                ValorMuestreoAnalogicoActionPerformed(evt);
+            }
+        });
+
+        BotonCambiarMuestreoAnalogico.setText("Cambiar");
+
+        TiempoMuestreoActualAnalogico.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        TiempoMuestreoActualAnalogico.setBorder(javax.swing.BorderFactory.createLineBorder(null));
+
+        EtiquetaValorMuestreoDigital.setText("Tiempo de Muestreo");
+
+        TiempoMuestreoActualDigital.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        TiempoMuestreoActualDigital.setBorder(javax.swing.BorderFactory.createLineBorder(null));
+
+        ValorMuestreoDigital.setHorizontalAlignment(javax.swing.JTextField.CENTER);
+        ValorMuestreoDigital.setToolTipText("ValorMuestreo");
+        ValorMuestreoDigital.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                ValorMuestreoDigitalActionPerformed(evt);
+            }
+        });
+
+        BotonCambiarMuestroDigital.setText("Cambiar");
+
         javax.swing.GroupLayout panelInferiorLayout = new javax.swing.GroupLayout(panelInferior);
         panelInferior.setLayout(panelInferiorLayout);
         panelInferiorLayout.setHorizontalGroup(
             panelInferiorLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 1280, Short.MAX_VALUE)
+            .addGroup(panelInferiorLayout.createSequentialGroup()
+                .addContainerGap()
+                .addComponent(EtiquetaValorMuestreoAnalogico)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(TiempoMuestreoActualAnalogico, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(ValorMuestreoAnalogico, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(BotonCambiarMuestreoAnalogico)
+                .addGap(281, 281, 281)
+                .addComponent(EtiquetaValorMuestreoDigital)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(TiempoMuestreoActualDigital, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(ValorMuestreoDigital, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(BotonCambiarMuestroDigital)
+                .addContainerGap(387, Short.MAX_VALUE))
         );
         panelInferiorLayout.setVerticalGroup(
             panelInferiorLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 100, Short.MAX_VALUE)
+            .addGroup(panelInferiorLayout.createSequentialGroup()
+                .addContainerGap()
+                .addGroup(panelInferiorLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(TiempoMuestreoActualDigital, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(panelInferiorLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                        .addComponent(BotonCambiarMuestroDigital)
+                        .addComponent(ValorMuestreoDigital, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(EtiquetaValorMuestreoDigital, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(TiempoMuestreoActualAnalogico, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(panelInferiorLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                        .addComponent(BotonCambiarMuestreoAnalogico)
+                        .addComponent(ValorMuestreoAnalogico, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(EtiquetaValorMuestreoAnalogico, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addContainerGap(83, Short.MAX_VALUE))
         );
 
         bg.add(panelInferior, java.awt.BorderLayout.PAGE_END);
@@ -167,7 +240,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(bg, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+            .addComponent(bg, javax.swing.GroupLayout.DEFAULT_SIZE, 501, Short.MAX_VALUE)
         );
 
         pack();
@@ -205,6 +278,106 @@ public class Laboratorio1 extends javax.swing.JFrame {
         // TODO add your handling code here:
     }//GEN-LAST:event_jComboBox1ActionPerformed
 
+    private void ValorMuestreoAnalogicoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ValorMuestreoAnalogicoActionPerformed
+        // TODO add your handling code here:
+    }//GEN-LAST:event_ValorMuestreoAnalogicoActionPerformed
+
+    private void ValorMuestreoDigitalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ValorMuestreoDigitalActionPerformed
+        // TODO add your handling code here:
+    }//GEN-LAST:event_ValorMuestreoDigitalActionPerformed
+
+    private void jComboBox2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox2ActionPerformed
+        // TODO add your handling code here:
+    }//GEN-LAST:event_jComboBox2ActionPerformed
+
+    private void BotonCambiarMuestreoAnalogicoActionPerformed(java.awt.event.ActionEvent evt) {
+        // Capturar el valor ingresado en el campo de texto
+        String valorIngresado = ValorMuestreoAnalogico.getText().trim();
+        
+        // Validar que no esté vacío
+        if (!valorIngresado.isEmpty()) {
+            try {
+                // Validar que sea un número válido y positivo
+                double valor = Double.parseDouble(valorIngresado);
+                
+                if (valor > 0) {
+                    // Actualizar la etiqueta que muestra el tiempo de muestreo actual
+                    TiempoMuestreoActualAnalogico.setText(valorIngresado);
+                    
+                    // Limpiar el campo de texto después de actualizar
+                    ValorMuestreoAnalogico.setText("");
+                    
+                    System.out.println("Tiempo de muestreo analógico actualizado a: " + valorIngresado);
+                } else {
+                    // Manejar error si el valor no es positivo
+                    System.err.println("Error: El valor debe ser mayor que cero");
+                    javax.swing.JOptionPane.showMessageDialog(this, 
+                        "El tiempo de muestreo debe ser un valor positivo (mayor que 0)", 
+                        "Valor inválido", 
+                        javax.swing.JOptionPane.ERROR_MESSAGE);
+                }
+            } catch (NumberFormatException e) {
+                // Manejar error si el valor no es un número válido
+                System.err.println("Error: El valor ingresado no es un número válido");
+                javax.swing.JOptionPane.showMessageDialog(this, 
+                    "Por favor ingrese un valor numérico válido", 
+                    "Error de formato", 
+                    javax.swing.JOptionPane.ERROR_MESSAGE);
+            }
+        } else {
+            // Manejar caso de campo vacío
+            System.err.println("Error: Campo de texto vacío");
+            javax.swing.JOptionPane.showMessageDialog(this, 
+                "Por favor ingrese un valor", 
+                "Campo vacío", 
+                javax.swing.JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private void BotonCambiarMuestroDigitalActionPerformed(java.awt.event.ActionEvent evt) {
+        // Capturar el valor ingresado en el campo de texto
+        String valorIngresado = ValorMuestreoDigital.getText().trim();
+        
+        // Validar que no esté vacío
+        if (!valorIngresado.isEmpty()) {
+            try {
+                // Validar que sea un número válido y positivo
+                double valor = Double.parseDouble(valorIngresado);
+                
+                if (valor > 0) {
+                    // Actualizar la etiqueta que muestra el tiempo de muestreo actual
+                    TiempoMuestreoActualDigital.setText(valorIngresado);
+                    
+                    // Limpiar el campo de texto después de actualizar
+                    ValorMuestreoDigital.setText("");
+                    
+                    System.out.println("Tiempo de muestreo digital actualizado a: " + valorIngresado);
+                } else {
+                    // Manejar error si el valor no es positivo
+                    System.err.println("Error: El valor debe ser mayor que cero");
+                    javax.swing.JOptionPane.showMessageDialog(this, 
+                        "El tiempo de muestreo debe ser un valor positivo (mayor que 0)", 
+                        "Valor inválido", 
+                        javax.swing.JOptionPane.ERROR_MESSAGE);
+                }
+            } catch (NumberFormatException e) {
+                // Manejar error si el valor no es un número válido
+                System.err.println("Error: El valor ingresado no es un número válido");
+                javax.swing.JOptionPane.showMessageDialog(this, 
+                    "Por favor ingrese un valor numérico válido", 
+                    "Error de formato", 
+                    javax.swing.JOptionPane.ERROR_MESSAGE);
+            }
+        } else {
+            // Manejar caso de campo vacío
+            System.err.println("Error: Campo de texto vacío");
+            javax.swing.JOptionPane.showMessageDialog(this, 
+                "Por favor ingrese un valor", 
+                "Campo vacío", 
+                javax.swing.JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
     /**
      * @param args the command line arguments
      */
@@ -241,6 +414,14 @@ public class Laboratorio1 extends javax.swing.JFrame {
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JButton BotonCambiarMuestreoAnalogico;
+    private javax.swing.JButton BotonCambiarMuestroDigital;
+    private javax.swing.JLabel EtiquetaValorMuestreoAnalogico;
+    private javax.swing.JLabel EtiquetaValorMuestreoDigital;
+    private javax.swing.JLabel TiempoMuestreoActualAnalogico;
+    private javax.swing.JLabel TiempoMuestreoActualDigital;
+    private javax.swing.JTextField ValorMuestreoAnalogico;
+    private javax.swing.JTextField ValorMuestreoDigital;
     private javax.swing.JPanel bg;
     private javax.swing.JButton jButton1;
     private javax.swing.JComboBox<String> jComboBox1;

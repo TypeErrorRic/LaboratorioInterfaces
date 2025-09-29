@@ -287,10 +287,12 @@ public class Laboratorio1 extends javax.swing.JFrame {
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
         // TODO add your handling code here:
-        double x = System.currentTimeMillis()/1000.0;
-        double y = Math.random()*10;
-        graficaAnalogica.addDato(x,y);
-        graficaDigital.addDato(x,y);
+        // double x = System.currentTimeMillis()/1000.0;
+        // double y = Math.random()*10;
+        // graficaAnalogica.addDato(x,y);
+        // graficaDigital.addDato(x,y);
+        graficaAnalogica.iniciarGraficacion("1", 50); // cada 100 ms
+        graficaDigital.iniciarGraficacion("2", 50); // cada 100 ms
     }//GEN-LAST:event_jButton1ActionPerformed
 
     private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed
@@ -432,7 +434,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
         });
     }
 
-    // Variables declaration - do not modify//GEN-BEGIN:variables
+    // Variables declaration - do not modify                     
     private javax.swing.JButton BotonCambiarMuestreoAnalogico;
     private javax.swing.JButton BotonCambiarMuestroDigital;
     private javax.swing.JLabel EtiquetaValorMuestreoAnalogico;

@@ -9,6 +9,7 @@ import java.awt.BorderLayout;
 import org.jfree.data.xy.XYSeries;
 
 import com.myproject.laboratorio1.botonGuardar;
+import java.awt.Color;
 
 /**
  * @author Arley
@@ -143,12 +144,27 @@ public class Laboratorio1 extends javax.swing.JFrame {
         jPanel1.add(jToggleButton1);
 
         jToggleButton2.setText("jToggleButton2");
+        jToggleButton2.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jToggleButton2ActionPerformed(evt);
+            }
+        });
         jPanel1.add(jToggleButton2);
 
         jToggleButton3.setText("jToggleButton3");
+        jToggleButton3.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jToggleButton3ActionPerformed(evt);
+            }
+        });
         jPanel1.add(jToggleButton3);
 
         jToggleButton4.setText("jToggleButton4");
+        jToggleButton4.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jToggleButton4ActionPerformed(evt);
+            }
+        });
         jPanel1.add(jToggleButton4);
 
         jButton1.setText("jButton1");
@@ -273,8 +289,38 @@ public class Laboratorio1 extends javax.swing.JFrame {
         });
         panelInferior.add(BotonCambiarMuestroDigital);
 
+        //Actualizar Botones:
+        jToggleButton1.setSelected(false);
+        actualizarToggle(jToggleButton1);
+        jToggleButton2.setSelected(false);
+        actualizarToggle(jToggleButton2);
+        jToggleButton3.setSelected(false);
+        actualizarToggle(jToggleButton3);
+        jToggleButton4.setSelected(false);
+        actualizarToggle(jToggleButton4);
+
         pack();
     }// </editor-fold>//GEN-END:initComponents
+
+    private void actualizarToggle(javax.swing.JToggleButton b) {
+        boolean encendido = b.isSelected();
+
+        if (encendido) {
+            b.setText("ON");
+            b.setBackground(new Color(46, 204, 113)); // verde
+            b.setForeground(Color.WHITE);
+        } else {
+            b.setText("OFF");
+            b.setBackground(new Color(231, 76, 60)); // rojo
+            b.setForeground(Color.WHITE);
+        }
+
+        // Para que el color de fondo se vea con varios Look&Feels
+        b.setOpaque(true);
+        b.setContentAreaFilled(true);
+        b.setFocusPainted(false);
+    }
+
 
     private void btnGuardarActionPerformed(java.awt.event.ActionEvent evt) {
         botonGuardar.guardarComoCSV(graficaAnalogica.getSeriexy(), graficaDigital.getSeriexy(), this);
@@ -282,8 +328,23 @@ public class Laboratorio1 extends javax.swing.JFrame {
     
     private void jToggleButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
         // TODO add your handling code here:
+        actualizarToggle(jToggleButton1);
+    }
 
-    }//GEN-LAST:event_jToggleButton1ActionPerformed
+    private void jToggleButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
+        // TODO add your handling code here:
+        actualizarToggle(jToggleButton2);
+    }
+
+    private void jToggleButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
+        // TODO add your handling code here:
+        actualizarToggle(jToggleButton3);
+    }
+
+    private void jToggleButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
+        // TODO add your handling code here:
+        actualizarToggle(jToggleButton4);
+    }
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
         // TODO add your handling code here:

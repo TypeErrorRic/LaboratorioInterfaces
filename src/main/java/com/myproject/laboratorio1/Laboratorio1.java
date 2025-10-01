@@ -502,11 +502,11 @@ public class Laboratorio1 extends javax.swing.JFrame {
     }
 
     /**
-     * Método auxiliar que mapea las selecciones numéricas del ComboBox a nombres descriptivos de señales.
+     * Método auxiliar que mapea las selecciones numéricas del ComboBox a títulos simples con números.
      * 
      * @param seleccion El valor seleccionado en el ComboBox (como String)
      * @param esAnalogica true si es para señal analógica, false si es para señal digital
-     * @return String con el nombre descriptivo de la señal
+     * @return String con el título que incluye solo el número de la señal
      */
     private String obtenerNombreSenal(String seleccion, boolean esAnalogica) {
         if (seleccion == null) {
@@ -514,27 +514,11 @@ public class Laboratorio1 extends javax.swing.JFrame {
         }
         
         if (esAnalogica) {
-            // Mapeo para señales analógicas (ComboBox1: opciones 1-8)
-            switch (seleccion) {
-                case "1": return "Señal Seno";
-                case "2": return "Señal Coseno";
-                case "3": return "Señal Triangular";
-                case "4": return "Señal Rampa";
-                case "5": return "Señal Exponencial";
-                case "6": return "Señal Logarítmica";
-                case "7": return "Señal Parabólica";
-                case "8": return "Señal Gaussiana";
-                default: return "Señal Analógica - Opción " + seleccion;
-            }
+            // Título simple para señales analógicas
+            return "Señal Analógica " + seleccion;
         } else {
-            // Mapeo para señales digitales (ComboBox2: opciones 1-4)
-            switch (seleccion) {
-                case "1": return "Señal Cuadrada";
-                case "2": return "Señal Pulso";
-                case "3": return "Señal PWM";
-                case "4": return "Señal Escalón";
-                default: return "Señal Digital - Opción " + seleccion;
-            }
+            // Título simple para señales digitales
+            return "Señal Digital " + seleccion;
         }
     }
 

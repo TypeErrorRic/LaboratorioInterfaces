@@ -24,11 +24,14 @@ public class Laboratorio1 extends javax.swing.JFrame {
     
     public Laboratorio1() {
         initComponents();
-        // Instaciar las dos graficas
-        graficaAnalogica = new LineGraph("Señal analogica", "Tiempo", "Valor", 100);
-        graficaDigital = new LineGraph("Señal digital", "Tiempo", "Valor", 100);
+        // Instanciar las dos gráficas
+        graficaAnalogica = new LineGraph("Señal Analógica", "Tiempo", "Valor", 100);
+        graficaDigital = new LineGraph("Señal Digital", "Tiempo", "Valor", 100);
         panelSenalAnalogica.add(graficaAnalogica.getChartPanel(), BorderLayout.CENTER);
         panelSenalDigital.add(graficaDigital.getChartPanel(), BorderLayout.CENTER);
+        
+        // Establecer títulos iniciales basados en las selecciones por defecto de los ComboBox
+        actualizarTitulosIniciales();
     }
 
     /**
@@ -357,7 +360,16 @@ public class Laboratorio1 extends javax.swing.JFrame {
     }//GEN-LAST:event_jButton1ActionPerformed
 
     private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed
-        // TODO add your handling code here:
+        // Obtener la selección del ComboBox1 (señales analógicas)
+        String seleccion = (String) jComboBox1.getSelectedItem();
+        
+        // Obtener el nombre de la señal basado en la selección
+        String nombreSenal = obtenerNombreSenal(seleccion, true); // true para analógica
+        
+        // Cambiar el título de la gráfica analógica
+        graficaAnalogica.setTitle(nombreSenal);
+        
+        System.out.println("Señal analógica seleccionada: " + nombreSenal);
     }//GEN-LAST:event_jComboBox1ActionPerformed
 
     private void ValorMuestreoAnalogicoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ValorMuestreoAnalogicoActionPerformed
@@ -369,7 +381,16 @@ public class Laboratorio1 extends javax.swing.JFrame {
     }//GEN-LAST:event_ValorMuestreoDigitalActionPerformed
 
     private void jComboBox2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox2ActionPerformed
-        // TODO add your handling code here:
+        // Obtener la selección del ComboBox2 (señales digitales)
+        String seleccion = (String) jComboBox2.getSelectedItem();
+        
+        // Obtener el nombre de la señal basado en la selección
+        String nombreSenal = obtenerNombreSenal(seleccion, false); // false para digital
+        
+        // Cambiar el título de la gráfica digital
+        graficaDigital.setTitle(nombreSenal);
+        
+        System.out.println("Señal digital seleccionada: " + nombreSenal);
     }//GEN-LAST:event_jComboBox2ActionPerformed
 
     private void BotonCambiarMuestreoAnalogicoActionPerformed(java.awt.event.ActionEvent evt) {
@@ -457,6 +478,63 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 "Por favor ingrese un valor", 
                 "Campo vacío", 
                 javax.swing.JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    /**
+     * Actualiza los títulos de las gráficas basado en las selecciones por defecto de los ComboBox.
+     * Se llama al inicializar la aplicación.
+     */
+    private void actualizarTitulosIniciales() {
+        // Obtener selecciones por defecto y actualizar títulos
+        String seleccionAnalogica = (String) jComboBox1.getSelectedItem();
+        String seleccionDigital = (String) jComboBox2.getSelectedItem();
+        
+        if (seleccionAnalogica != null) {
+            String nombreAnalogica = obtenerNombreSenal(seleccionAnalogica, true);
+            graficaAnalogica.setTitle(nombreAnalogica);
+        }
+        
+        if (seleccionDigital != null) {
+            String nombreDigital = obtenerNombreSenal(seleccionDigital, false);
+            graficaDigital.setTitle(nombreDigital);
+        }
+    }
+
+    /**
+     * Método auxiliar que mapea las selecciones numéricas del ComboBox a nombres descriptivos de señales.
+     * 
+     * @param seleccion El valor seleccionado en el ComboBox (como String)
+     * @param esAnalogica true si es para señal analógica, false si es para señal digital
+     * @return String con el nombre descriptivo de la señal
+     */
+    private String obtenerNombreSenal(String seleccion, boolean esAnalogica) {
+        if (seleccion == null) {
+            return esAnalogica ? "Señal Analógica" : "Señal Digital";
+        }
+        
+        if (esAnalogica) {
+            // Mapeo para señales analógicas (ComboBox1: opciones 1-8)
+            switch (seleccion) {
+                case "1": return "Señal Seno";
+                case "2": return "Señal Coseno";
+                case "3": return "Señal Triangular";
+                case "4": return "Señal Rampa";
+                case "5": return "Señal Exponencial";
+                case "6": return "Señal Logarítmica";
+                case "7": return "Señal Parabólica";
+                case "8": return "Señal Gaussiana";
+                default: return "Señal Analógica - Opción " + seleccion;
+            }
+        } else {
+            // Mapeo para señales digitales (ComboBox2: opciones 1-4)
+            switch (seleccion) {
+                case "1": return "Señal Cuadrada";
+                case "2": return "Señal Pulso";
+                case "3": return "Señal PWM";
+                case "4": return "Señal Escalón";
+                default: return "Señal Digital - Opción " + seleccion;
+            }
         }
     }
 

@@ -267,7 +267,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
 
         // ====== Botón Guardar CSV ======
         btnGuardar = new javax.swing.JButton();
-        btnGuardar.setText("Guardar datos (CSV)");
+        btnGuardar.setText("💾 Exportar");
         btnGuardar.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 btnGuardarActionPerformed(evt);

@@ -108,12 +108,11 @@ static void applyLedMask(uint8_t mask) {
  * @return Máscara de 4 bits donde 1 indica switch activo (HIGH en pin).
  */
 static uint8_t readDipMask() {
-  // Nota: tratar el pin HIGH como switch activo (1).
-  // Esto invierte la lógica anterior (estaba considerando LOW como activo).
+  // Nota: tratar el pin LOW como switch activo (1).
   uint8_t m = 0;
   for (uint8_t i = 0; i < 4; ++i) {
     int v = digitalRead(DIP_PINS[i]);
-    if (v == HIGH) m |= (1u << i);
+    if (v == LOW) m |= (1u << i);
   }
   lastDipMask = m;
   return m;

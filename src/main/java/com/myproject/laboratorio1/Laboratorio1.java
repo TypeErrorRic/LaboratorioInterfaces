@@ -5,6 +5,7 @@
 package com.myproject.laboratorio1;
 
 import java.awt.BorderLayout;
+import java.util.Arrays;
 
 import org.jfree.data.xy.XYSeries;
 
@@ -21,6 +22,10 @@ public class Laboratorio1 extends javax.swing.JFrame {
      */
     private LineGraph graficaAnalogica;
     private LineGraph graficaDigital;
+    // Componentes para puerto y arranque
+    private javax.swing.JComboBox<String> comboPuertos;
+    // Runner compartido para impresión periódica desde main
+    private static volatile SerialProtocolRunner sharedRunner;
     
     public Laboratorio1() {
         initComponents();
@@ -29,6 +34,18 @@ public class Laboratorio1 extends javax.swing.JFrame {
         graficaDigital = new LineGraph("Señal digital", "Tiempo", "Valor", 100);
         panelSenalAnalogica.add(graficaAnalogica.getChartPanel(), BorderLayout.CENTER);
         panelSenalDigital.add(graficaDigital.getChartPanel(), BorderLayout.CENTER);
+
+        // Menú desplegable de puertos y botón Iniciar
+        comboPuertos = new javax.swing.JComboBox<>(SerialIO.listPorts());
+        panelSuperior.add(new javax.swing.JLabel(" Puerto: "));
+        panelSuperior.add(comboPuertos);
+
+        // Comentario: para cambiar su posición, puedes añadir los componentes
+        // al panel que prefieras y ajustar su layout. Por ejemplo:
+        // panelInferior.add(comboPuertos);
+        // o con BorderLayout: panelInferior.add(comboPuertos, java.awt.BorderLayout.LINE_START);
+        // Si usas GroupLayout, edita el GroupLayout de panelInferior para ubicarlos donde quieras.
+
     }
 
     /**
@@ -347,11 +364,34 @@ public class Laboratorio1 extends javax.swing.JFrame {
     }
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        // TODO add your handling code here:
-        // double x = System.currentTimeMillis()/1000.0;
-        // double y = Math.random()*10;
-        // graficaAnalogica.addDato(x,y);
-        // graficaDigital.addDato(x,y);
+        // Iniciar transmisión del protocolo en el puerto seleccionado
+        String port = (comboPuertos != null) ? (String) comboPuertos.getSelectedItem() : null;
+        if (port == null || port.isEmpty()) {
+            javax.swing.JOptionPane.showMessageDialog(this, "Seleccione un puerto COM válido.");
+        } else {
+            try {
+                SerialProtocolRunner r = new SerialProtocolRunner(port, 115200);
+                r.startTransmission();
+                sharedRunner = r;
+                System.out.println("Transmisión iniciada en " + port + " @115200 (desde jButton1)");
+            } catch (Exception e) {
+                System.err.println("No se pudo iniciar transmisión en " + port + ": " + e.getMessage());
+                try {
+                    // Intentar liberar el puerto por nombre (p.ej. si quedó bloqueado)
+                    SerialIO.forceClose(port);
+                } catch (Exception ignored) {}
+                try {
+                    // Cerrar conexión si falló el ACK u otro error al iniciar
+                    // y asegurar que el puerto no quede abierto.
+                    SerialProtocolRunner toClose = sharedRunner;
+                    if (toClose != null) {
+                        toClose.close();
+                        sharedRunner = null;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
         graficaAnalogica.iniciarGraficacion("1", 50); // cada 100 ms
         graficaDigital.iniciarGraficacion("2", 50); // cada 100 ms
     }//GEN-LAST:event_jButton1ActionPerformed
@@ -460,6 +500,13 @@ public class Laboratorio1 extends javax.swing.JFrame {
         }
     }
 
+    private static String bytesToHex(byte[] data) {
+        if (data == null || data.length == 0) return "";
+        StringBuilder sb = new StringBuilder(data.length * 3);
+        for (byte b : data) sb.append(String.format("%02X ", b));
+        return sb.toString().trim();
+    }
+
     /**
      * @param args the command line arguments
      */
@@ -487,6 +534,29 @@ public class Laboratorio1 extends javax.swing.JFrame {
         }
         //</editor-fold>
 
+        // No abrir comunicación aquí; depende del botón (jButton1)
+
+        // Hilo que imprime cada segundo desde el runner seleccionado con el botón "Iniciar"
+        Thread printer = new Thread(() -> {
+            while (true) {
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                SerialProtocolRunner r = sharedRunner;
+                if (r != null) {
+                    SerialProtocolRunner.TimedValue dig = r.getDigitalPins();
+                    if (dig != null && dig.tMs >= 0) {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(String.format("t=%dms DIG=0x%02X ", dig.tMs, dig.value));
+                        for (int ch = 0; ch < 8; ch++) {
+                            SerialProtocolRunner.TimedValue tv = r.getAdcValue(ch);
+                            sb.append(String.format("AN%d=%d(t=%dms) ", ch, tv.value, tv.tMs));
+                        }
+                        System.out.println(sb.toString().trim());
+                    }
+                }
+            }
+        }, "Protocol-Printer");
+        printer.setDaemon(true);
+        printer.start();
         /* Create and display the form */
         java.awt.EventQueue.invokeLater(new Runnable() {
             public void run() {

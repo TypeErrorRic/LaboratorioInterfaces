@@ -366,6 +366,8 @@ public class Laboratorio1 extends javax.swing.JFrame {
 
         // Al presionar, leer y volcar muestras pendientes hasta agotar buffer (t = -1)
         SerialProtocolRunner r = sharedRunner;
+        // tval almacena el tiempo del último dato ADC leído para calcular delta de tiempo
+        long tval = -1L;
         if (r != null) {
             while (true) {
                 SerialProtocolRunner.TimedValue dig = r.getDigitalPins();
@@ -373,8 +375,11 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 StringBuilder sb = new StringBuilder();
                 sb.append(String.format("t=%dms DIG=0x%02X ", dig.tMs, dig.value));
                 SerialProtocolRunner.TimedValue tv = r.getAdcValue(1);
-                sb.append(String.format("AN%d=%d(t=%dms) ", 1, tv.value, tv.tMs));
+                // Delta de tiempo entre muestras ADC consecutivas (datos continuos)
+                long dt = (tval >= 0L) ? (tv.tMs - tval) : 0L;
+                sb.append(String.format("AN%d=%d(t=%dms dT=%dms) ", 1, tv.value, tv.tMs, dt));
                 System.out.println(sb.toString().trim());
+                tval = tv.tMs;
             }
         } else {
             System.out.println("Runner no iniciado; use el boton Iniciar.");

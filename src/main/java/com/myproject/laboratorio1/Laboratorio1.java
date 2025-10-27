@@ -360,11 +360,10 @@ public class Laboratorio1 extends javax.swing.JFrame {
         actualizarToggle(jToggleButton3);
         // Al presionar, establecer tasa de muestreo ADC a 20 ms
         SerialProtocolRunner r = sharedRunner;
-        int tsMs = 20;
-        if (r != null) {
-            // Enviar comando a la MCU
-            r.commandSetTsAdc(tsMs);
-        }
+        // Enviar comando a la MCU
+        SerialProtocolRunner.commandSetTsAdc(r, 20);
+        SerialProtocolRunner.commandSetLedMask(r, "0100");
+        SerialProtocolRunner.commandSetTsDip(r, 20);
     }
 
     private void jToggleButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
@@ -405,7 +404,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 try { prev.close(); } catch (Exception ignored) {}
                 sharedRunner = null;
             }
-
             SerialProtocolRunner r = new SerialProtocolRunner(port, 115200);
             sharedRunner = r;
             r.startTransmissionWithRetryAsync(500);
@@ -419,8 +417,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
                     System.out.println("Transmision lista en " + rr.getPort());
                 }
             }, "Protocol-StartWait").start();
-            System.out.println("Estado -> conectando=" + r.isConnecting() + ", activo=" + r.isTransmissionActive());
-            System.out.println("Intentando iniciar transmisión en " + port + " @115200 (reintentos automáticos)");
         }
 
         graficaAnalogica.iniciarGraficacion("1", 50); // cada 100 ms

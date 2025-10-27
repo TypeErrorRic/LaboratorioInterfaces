@@ -18,6 +18,7 @@ import java.util.List;
 public class SerialProtocolRunner {
     // Registro global por puerto para evitar instancias simultáneas que se pisen
     private static final Object REGISTRY_LOCK = new Object();
+    private static final Object PENDING_LOCK = new Object();
     private static final java.util.Map<String, SerialProtocolRunner> ACTIVE_BY_PORT = new java.util.HashMap<>();
     private final String port;
     private final int baud;
@@ -28,6 +29,9 @@ public class SerialProtocolRunner {
     private Thread readerThread;
     private volatile boolean connecting;
     private Thread connectThread;
+    // Reintentos de comandos (ACK) en segundo plano
+    private volatile boolean commandRetryRunning;
+    private Thread commandRetryThread;
 
     // Buffers FIFO separados (capacidad fija con recorte)
     private static final int BUFFER_CAPACITY = 512;
@@ -36,10 +40,10 @@ public class SerialProtocolRunner {
     // Marca de tiempo de inicio
     private volatile long t0Ms = -1L;
 
-    // Estado deseado/pending de comandos PC->MCU cuando la comunicación aún no inició
-    private Integer pendingLedMask = null;         // 0..255
-    private Integer pendingTsDip = null;           // 0..65535 (LE)
-    private Integer pendingTsAdc = null;           // 0..65535 (LE)
+    // Estado deseado/pending de comandos PC->MCU (compartido a nivel de clase)
+    private static volatile Integer pendingLedMask = null;   // 0..255
+    private static volatile Integer pendingTsDip = null;     // 0..65535 (LE)
+    private static volatile Integer pendingTsAdc = null;     // 0..65535 (LE)
 
     /**
      * Crea un runner asociado a un puerto y baud rate.
@@ -91,6 +95,8 @@ public class SerialProtocolRunner {
 
         try {
         ensureOpen();
+        // Asegurar que el canal esté desocupado antes de esperar el ACK
+        try { if (serial != null) serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
         t0Ms = System.currentTimeMillis();
         // Dar mas margen para el ACK inicial (MCU puede estar arrancando)
         byte[] resp = serial.sendCommand(0x05, new byte[]{ 0x01 }, 64, Math.max(1500L, defaultTimeoutMs));
@@ -116,12 +122,112 @@ public class SerialProtocolRunner {
     public synchronized void stopTransmission() {
         try {
             if (serial != null) {
+                // Vaciar canal previo al ACK de stop para evitar mezclar streaming
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
                 byte[] resp = serial.sendCommand(0x05, new byte[]{ 0x00 }, 64, defaultTimeoutMs);
                 // Validación best-effort; no interrumpe parada si es inválido
                 validateResponse(resp);
             }
         } catch (Exception ignored) {}
         reading = false;
+    }
+
+    // Inicia un hilo que reintenta comandos pendientes hasta recibir ACK válido
+    private void ensureCommandRetryWorker() {
+        synchronized (this) {
+            if (commandRetryRunning) return;
+            commandRetryRunning = true;
+        }
+        Thread t = new Thread(this::commandRetryLoop, "Serial-CmdRetry");
+        t.setDaemon(true);
+        commandRetryThread = t;
+        t.start();
+    }
+
+    private static boolean hasPendingCommands() {
+        synchronized (PENDING_LOCK) {
+            return pendingLedMask != null || pendingTsDip != null || pendingTsAdc != null;
+        }
+    }
+
+    private void commandRetryLoop() {
+        try {
+            while (true) {
+                // Salir si no hay trabajo
+                boolean anyPending = hasPendingCommands();
+                if (!anyPending) break;
+
+                // Si no hay transmisión activa o no hay IO, esperar un poco
+                if (!reading || serial == null) {
+                    try { Thread.sleep(50); } catch (InterruptedException ie) { break; }
+                    continue;
+                }
+
+                boolean didWork = false;
+
+                // LED mask
+                Integer led = null;
+                synchronized (PENDING_LOCK) { if (pendingLedMask != null) led = pendingLedMask; }
+                if (led != null) {
+                    didWork = true;
+                    try {
+                        try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
+                        byte[] resp = serial.sendCommand(0x01, new byte[]{ (byte)(led & 0xFF) }, 64, defaultTimeoutMs);
+                        boolean ok = validateResponse(resp);
+                        if (ok) {
+                            synchronized (PENDING_LOCK) {
+                                if (pendingLedMask != null && (pendingLedMask & 0xFF) == (led & 0xFF)) pendingLedMask = null;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                // Ts DIP
+                Integer tsDip = null;
+                synchronized (PENDING_LOCK) { if (pendingTsDip != null) tsDip = pendingTsDip; }
+                if (tsDip != null) {
+                    didWork = true;
+                    int v = tsDip;
+                    byte lo = (byte) (v & 0xFF), hi = (byte)((v >>> 8) & 0xFF);
+                    try {
+                        try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
+                        byte[] resp = serial.sendCommand(0x03, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
+                        boolean ok = validateResponse(resp);
+                        if (ok) {
+                            synchronized (PENDING_LOCK) {
+                                if (pendingTsDip != null && pendingTsDip == v) pendingTsDip = null;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                // Ts ADC
+                Integer tsAdc = null;
+                synchronized (PENDING_LOCK) { if (pendingTsAdc != null) tsAdc = pendingTsAdc; }
+                if (tsAdc != null) {
+                    didWork = true;
+                    int v = tsAdc;
+                    byte lo = (byte) (v & 0xFF), hi = (byte)((v >>> 8) & 0xFF);
+                    try {
+                        try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
+                        byte[] resp = serial.sendCommand(0x08, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
+                        boolean ok = validateResponse(resp);
+                        if (ok) {
+                            synchronized (PENDING_LOCK) {
+                                if (pendingTsAdc != null && pendingTsAdc == v) pendingTsAdc = null;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                if (!didWork) {
+                    // Nada que enviar ahora; pequeña pausa
+                    try { Thread.sleep(50); } catch (InterruptedException ie) { break; }
+                }
+            }
+        } finally {
+            synchronized (this) { commandRetryRunning = false; }
+        }
     }
 
     // Cierra el puerto y detiene cualquier lectura en curso
@@ -136,9 +242,11 @@ public class SerialProtocolRunner {
         connecting = false;
         try { if (readerThread != null) readerThread.interrupt(); } catch (Exception ignored) {}
         try { if (connectThread != null) connectThread.interrupt(); } catch (Exception ignored) {}
+        try { if (commandRetryThread != null) commandRetryThread.interrupt(); } catch (Exception ignored) {}
         try { if (serial != null) serial.close(); } catch (Exception ignored) {}
         serial = null;
         connectThread = null;
+        commandRetryThread = null;
         try { SerialIO.forceClose(port); } catch (Exception ignored) {}
         try { Thread.sleep(50); } catch (InterruptedException ignored) {}
         synchronized (REGISTRY_LOCK) {
@@ -319,15 +427,43 @@ public class SerialProtocolRunner {
         for (int i = 0; i < len; i++) calc ^= (resp[idx + 5 + i] & 0xFF);
         int chk = resp[idx + 5 + len] & 0xFF;
         boolean ok = ((calc & 0xFF) == chk);
-        System.out.println("validateResponse: idx=" + idx + " status=0x" + String.format("%02X", status) +
-                " cmd=0x" + String.format("%02X", cmd) + " len=" + len +
-                " calc=0x" + String.format("%02X", (calc & 0xFF)) + " chk=0x" + String.format("%02X", chk) +
-                " ok=" + ok + " bytes=" + hex);
+        System.out.println("ACK Recibido.");
         return ok;
     }
 
     // ========= Comandos PC->MCU (55 AA CMD LEN PAYLOAD CHK) =========
     // Si la comunicación está iniciada: envía ya. Si no: queda pendiente para enviar al iniciar.
+
+    // Wrappers estáticos para invocar con una instancia explícita o dejar valores pendientes si runner==null
+    public static void commandSetLedMask(SerialProtocolRunner runner, int mask) {
+        if (runner != null) { runner.commandSetLedMask(mask); return; }
+        synchronized (PENDING_LOCK) { pendingLedMask = mask & 0xFF; }
+    }
+    public static void commandSetLedMask(SerialProtocolRunner runner, String binaryMask) {
+        if (runner != null) { runner.commandSetLedMask(binaryMask); return; }
+        int m = parseBinaryMask(binaryMask);
+        synchronized (PENDING_LOCK) { pendingLedMask = m & 0xFF; }
+    }
+    public static void commandSetTsDip(SerialProtocolRunner runner, int ts) {
+        if (runner != null) { runner.commandSetTsDip(ts); return; }
+        int v = Math.max(0, Math.min(0xFFFF, ts));
+        synchronized (PENDING_LOCK) { pendingTsDip = v; }
+    }
+    public static void commandSetTsDip(SerialProtocolRunner runner, long tsMs) {
+        if (runner != null) { runner.commandSetTsDip(tsMs); return; }
+        long cl = Math.max(0L, Math.min(0xFFFFL, tsMs));
+        synchronized (PENDING_LOCK) { pendingTsDip = (int) cl; }
+    }
+    public static void commandSetTsAdc(SerialProtocolRunner runner, int ts) {
+        if (runner != null) { runner.commandSetTsAdc(ts); return; }
+        int v = Math.max(0, Math.min(0xFFFF, ts));
+        synchronized (PENDING_LOCK) { pendingTsAdc = v; }
+    }
+    public static void commandSetTsAdc(SerialProtocolRunner runner, long tsMs) {
+        if (runner != null) { runner.commandSetTsAdc(tsMs); return; }
+        long cl = Math.max(0L, Math.min(0xFFFFL, tsMs));
+        synchronized (PENDING_LOCK) { pendingTsAdc = (int) cl; }
+    }
 
     // 0x01 Set LED mask (LEN=1, unsigned). Payload: [mask]
     /**
@@ -338,15 +474,18 @@ public class SerialProtocolRunner {
      */
     public synchronized void commandSetLedMask(int mask) {
         int m = mask & 0xFF;
+        boolean ok = false;
         if (reading && serial != null) {
             try {
+                // Evitar basura de streaming antes de capturar el ACK
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
                 byte[] resp = serial.sendCommand(0x01, new byte[]{ (byte) m }, 64, defaultTimeoutMs);
-                validateResponse(resp);
-            } catch (Exception e) {
-                pendingLedMask = m;
-            }
-        } else {
-            pendingLedMask = m;
+                ok = validateResponse(resp);
+            } catch (Exception ignored) {}
+        }
+        if (!ok) {
+            synchronized (PENDING_LOCK) { pendingLedMask = m; }
+            if (reading && serial != null) ensureCommandRetryWorker();
         }
     }
 
@@ -385,15 +524,18 @@ public class SerialProtocolRunner {
         int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
         byte hi = (byte) ((v >>> 8) & 0xFF);
+        boolean ok = false;
         if (reading && serial != null) {
             try {
+                // Evitar basura de streaming antes de capturar el ACK
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
                 byte[] resp = serial.sendCommand(0x03, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
-                validateResponse(resp);
-            } catch (Exception e) {
-                pendingTsDip = v;
-            }
-        } else {
-            pendingTsDip = v;
+                ok = validateResponse(resp);
+            } catch (Exception ignored) {}
+        }
+        if (!ok) {
+            synchronized (PENDING_LOCK) { pendingTsDip = v; }
+            if (reading && serial != null) ensureCommandRetryWorker();
         }
     }
 
@@ -421,15 +563,18 @@ public class SerialProtocolRunner {
         int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
         byte hi = (byte) ((v >>> 8) & 0xFF);
+        boolean ok = false;
         if (reading && serial != null) {
             try {
+                // Evitar basura de streaming antes de capturar el ACK
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
                 byte[] resp = serial.sendCommand(0x08, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
-                validateResponse(resp);
-            } catch (Exception e) {
-                pendingTsAdc = v;
-            }
-        } else {
-            pendingTsAdc = v;
+                ok = validateResponse(resp);
+            } catch (Exception ignored) {}
+        }
+        if (!ok) {
+            synchronized (PENDING_LOCK) { pendingTsAdc = v; }
+            if (reading && serial != null) ensureCommandRetryWorker();
         }
     }
 
@@ -448,23 +593,50 @@ public class SerialProtocolRunner {
     private void flushPendingCommands() {
         if (serial == null) return;
         // LED mask
-        if (pendingLedMask != null) {
-            try { byte[] r = serial.sendCommand(0x01, new byte[]{ (byte)(pendingLedMask & 0xFF) }, 64, defaultTimeoutMs); validateResponse(r); } catch (Exception ignored) {}
-            pendingLedMask = null;
+        Integer pLed;
+        synchronized (PENDING_LOCK) { pLed = pendingLedMask; }
+        if (pLed != null) {
+            try {
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
+                byte[] r = serial.sendCommand(0x01, new byte[]{ (byte)(pLed & 0xFF) }, 64, defaultTimeoutMs);
+                if (validateResponse(r)) {
+                    synchronized (PENDING_LOCK) { if (pendingLedMask != null && (pendingLedMask & 0xFF) == (pLed & 0xFF)) pendingLedMask = null; }
+                } else {
+                    ensureCommandRetryWorker();
+                }
+            } catch (Exception ignored) { ensureCommandRetryWorker(); }
         }
         // Ts DIP
-        if (pendingTsDip != null) {
-            int v = pendingTsDip;
+        Integer pDip;
+        synchronized (PENDING_LOCK) { pDip = pendingTsDip; }
+        if (pDip != null) {
+            int v = pDip;
             byte lo = (byte) (v & 0xFF), hi = (byte)((v >>> 8) & 0xFF);
-            try { byte[] r = serial.sendCommand(0x03, new byte[]{ lo, hi }, 64, defaultTimeoutMs); validateResponse(r); } catch (Exception ignored) {}
-            pendingTsDip = null;
+            try {
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
+                byte[] r = serial.sendCommand(0x03, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
+                if (validateResponse(r)) {
+                    synchronized (PENDING_LOCK) { if (pendingTsDip != null && pendingTsDip == v) pendingTsDip = null; }
+                } else {
+                    ensureCommandRetryWorker();
+                }
+            } catch (Exception ignored) { ensureCommandRetryWorker(); }
         }
         // Ts ADC
-        if (pendingTsAdc != null) {
-            int v = pendingTsAdc;
+        Integer pAdc;
+        synchronized (PENDING_LOCK) { pAdc = pendingTsAdc; }
+        if (pAdc != null) {
+            int v = pAdc;
             byte lo = (byte) (v & 0xFF), hi = (byte)((v >>> 8) & 0xFF);
-            try { byte[] r = serial.sendCommand(0x08, new byte[]{ lo, hi }, 64, defaultTimeoutMs); validateResponse(r); } catch (Exception ignored) {}
-            pendingTsAdc = null;
+            try {
+                try { serial.drainInput(30, Math.max(150L, defaultTimeoutMs / 4)); } catch (Exception ignored) {}
+                byte[] r = serial.sendCommand(0x08, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
+                if (validateResponse(r)) {
+                    synchronized (PENDING_LOCK) { if (pendingTsAdc != null && pendingTsAdc == v) pendingTsAdc = null; }
+                } else {
+                    ensureCommandRetryWorker();
+                }
+            } catch (Exception ignored) { ensureCommandRetryWorker(); }
         }
     }
 

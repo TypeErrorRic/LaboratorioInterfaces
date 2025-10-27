@@ -29,6 +29,37 @@ public class SerialIO implements AutoCloseable {
         }
     }
 
+    /**
+     * Drena la entrada hasta que permanezca sin datos durante un periodo "quieto" o hasta un tiempo máximo.
+     *
+     * @param quietPeriodMs  Tiempo consecutivo sin datos para considerar el canal desocupado.
+     * @param maxWaitMs      Tiempo máximo total de espera antes de abortar el drenaje.
+     * @return Cantidad total de bytes leídos y descartados.
+     * @throws IOException si ocurre un error de E/S con el puerto.
+     */
+    public int drainInput(long quietPeriodMs, long maxWaitMs) throws IOException {
+        ensureOpen();
+        long start = System.currentTimeMillis();
+        long lastData = start;
+        int drained = 0;
+        long quiet = Math.max(0L, quietPeriodMs);
+        long maxWait = Math.max(0L, maxWaitMs);
+
+        while (true) {
+            byte[] chunk = readAvailable();
+            if (chunk.length > 0) {
+                drained += chunk.length;
+                lastData = System.currentTimeMillis();
+            } else {
+                long now = System.currentTimeMillis();
+                if ((now - lastData) >= quiet) break;
+                if ((now - start) >= maxWait) break;
+                try { Thread.sleep(5); } catch (InterruptedException ignored) { break; }
+            }
+        }
+        return drained;
+    }
+
     /** ENVÍO: devuelve la cantidad de bytes escritos. */
     public int send(byte[] data) throws IOException {
         ensureOpen();

@@ -79,7 +79,7 @@ public class SerialProtocolRunner {
             // Enviar comandos pendientes encolados antes de iniciar
             flushPendingCommands();
         }
-        } catch (Exception e) { try { close(); } catch (Exception ignored) {} throw e; }
+        } catch (Exception e) { try { resetForRetry(); } catch (Exception ignored) {} throw e; }
     }
 
     // Detiene transmisión y mantiene el puerto abierto
@@ -384,7 +384,8 @@ public class SerialProtocolRunner {
                         break;
                     } catch (Exception e) {
                         System.err.println("Error de conexion en " + port + " (intento " + attempt + "): " + e.getMessage());
-                        try { close(); } catch (Exception ignored) {}
+                        // Cerrar IO sin cancelar la bandera de reintentos
+                        try { resetForRetry(); } catch (Exception ignored) {}
                         attempt++;
                         try { Thread.sleep(delay); } catch (InterruptedException ie) { System.out.println("Reintento interrumpido para " + port); break; }
                     }
@@ -396,6 +397,17 @@ public class SerialProtocolRunner {
         t.setDaemon(true);
         this.connectThread = t;
         t.start();
+    }
+
+    // Cierra serial/lector sin alterar "connecting" ni interrumpir el hilo de reintentos
+    private synchronized void resetForRetry() {
+        reading = false;
+        try { if (readerThread != null) readerThread.interrupt(); } catch (Exception ignored) {}
+        try { if (serial != null) serial.close(); } catch (Exception ignored) {}
+        serial = null;
+        try { SerialIO.forceClose(port); } catch (Exception ignored) {}
+        try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+        // No tocar: connecting, connectThread ni ACTIVE_BY_PORT
     }
 
     // Opcionales: exponer tamaño de buffers y limpiar manualmente

@@ -7,6 +7,9 @@ import java.util.Deque;
 import java.util.List;
 
 public class SerialProtocolRunner {
+    // Registro global por puerto para evitar instancias simultáneas que se pisen
+    private static final Object REGISTRY_LOCK = new Object();
+    private static final java.util.Map<String, SerialProtocolRunner> ACTIVE_BY_PORT = new java.util.HashMap<>();
     private final String port;
     private final int baud;
     private final long defaultTimeoutMs = 500;
@@ -14,6 +17,7 @@ public class SerialProtocolRunner {
     private SerialIO serial;
     private volatile boolean reading;
     private Thread readerThread;
+    private volatile boolean connecting;
 
     // Buffers FIFO separados (capacidad fija con recorte)
     private static final int BUFFER_CAPACITY = 512;
@@ -21,6 +25,11 @@ public class SerialProtocolRunner {
     private final Deque<DigitalSample> digitalBuffer = new ArrayDeque<>(BUFFER_CAPACITY);
     // Marca de tiempo de inicio
     private volatile long t0Ms = -1L;
+
+    // Estado deseado/pending de comandos PC->MCU cuando la comunicación aún no inició
+    private Integer pendingLedMask = null;         // 0..255
+    private Integer pendingTsDip = null;           // 0..65535 (LE)
+    private Integer pendingTsAdc = null;           // 0..65535 (LE)
 
     public SerialProtocolRunner(String port, int baud) {
         this.port = port;
@@ -30,6 +39,7 @@ public class SerialProtocolRunner {
     // Abre el puerto si no está abierto
     private synchronized void ensureOpen() throws Exception {
         if (serial == null) {
+            try { SerialIO.forceClose(port); } catch (Exception ignored) {}
             serial = new SerialIO(port, baud);
             try { Thread.sleep(100); } catch (InterruptedException ignored) {}
         }
@@ -37,6 +47,21 @@ public class SerialProtocolRunner {
 
     // Inicia transmisión en hilo: habilita streaming (CMD=0x05, 0x01) y arranca el lector que llena el buffer
     public synchronized void startTransmission() throws Exception {
+        // Si ya estamos leyendo con esta instancia, no volver a iniciar
+        if (reading) return;
+
+        // Garantiza exclusividad por puerto: cierra otra instancia previa si existe
+        synchronized (REGISTRY_LOCK) {
+            SerialProtocolRunner prev = ACTIVE_BY_PORT.get(port);
+            if (prev != null && prev != this) {
+                try { prev.close(); } catch (Exception ignored) {}
+                ACTIVE_BY_PORT.remove(port);
+                try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+            }
+            ACTIVE_BY_PORT.put(port, this);
+        }
+
+        try {
         ensureOpen();
         t0Ms = System.currentTimeMillis();
         byte[] resp = serial.sendCommand(0x05, new byte[]{ 0x01 }, 64, defaultTimeoutMs);
@@ -48,7 +73,10 @@ public class SerialProtocolRunner {
             readerThread = new Thread(this::readLoop, "Serial-FrameReader");
             readerThread.setDaemon(true);
             readerThread.start();
+            // Enviar comandos pendientes encolados antes de iniciar
+            flushPendingCommands();
         }
+        } catch (Exception e) { try { close(); } catch (Exception ignored) {} throw e; }
     }
 
     // Detiene transmisión y mantiene el puerto abierto
@@ -66,9 +94,16 @@ public class SerialProtocolRunner {
     // Cierra el puerto y detiene cualquier lectura en curso
     public synchronized void close() {
         reading = false;
+        connecting = false;
         try { if (readerThread != null) readerThread.interrupt(); } catch (Exception ignored) {}
         try { if (serial != null) serial.close(); } catch (Exception ignored) {}
         serial = null;
+        try { SerialIO.forceClose(port); } catch (Exception ignored) {}
+        try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+        synchronized (REGISTRY_LOCK) {
+            SerialProtocolRunner cur = ACTIVE_BY_PORT.get(port);
+            if (cur == this) ACTIVE_BY_PORT.remove(port);
+        }
     }
 
     // Devuelve (y consume) el valor ADC del canal [0..7] + tiempo en ms desde start
@@ -213,6 +248,110 @@ public class SerialProtocolRunner {
         for (int i = 0; i < len; i++) calc ^= (resp[idx + 5 + i] & 0xFF);
         int chk = resp[idx + 5 + len] & 0xFF;
         return (calc & 0xFF) == chk;
+    }
+
+    // ========= Comandos PC->MCU (55 AA CMD LEN PAYLOAD CHK) =========
+    // Si la comunicación está iniciada: envía ya. Si no: queda pendiente para enviar al iniciar.
+
+    // 0x01 Set LED mask (LEN=1). Payload: [mask]
+    public synchronized void commandSetLedMask(int mask) {
+        int m = mask & 0xFF;
+        if (reading && serial != null) {
+            try {
+                byte[] resp = serial.sendCommand(0x01, new byte[]{ (byte) m }, 64, defaultTimeoutMs);
+                validateResponse(resp);
+            } catch (Exception e) {
+                pendingLedMask = m;
+            }
+        } else {
+            pendingLedMask = m;
+        }
+    }
+
+    // 0x03 Set Ts DIP (LEN=2, uint16 LE)
+    public synchronized void commandSetTsDip(int ts) {
+        int v = Math.max(0, Math.min(0xFFFF, ts));
+        byte lo = (byte) (v & 0xFF);
+        byte hi = (byte) ((v >>> 8) & 0xFF);
+        if (reading && serial != null) {
+            try {
+                byte[] resp = serial.sendCommand(0x03, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
+                validateResponse(resp);
+            } catch (Exception e) {
+                pendingTsDip = v;
+            }
+        } else {
+            pendingTsDip = v;
+        }
+    }
+
+    // (Eliminados) 0x05 Streaming y 0x06 Snapshot: no se usan
+
+    // 0x08 Set Ts ADC (LEN=2, uint16 LE)
+    public synchronized void commandSetTsAdc(int ts) {
+        int v = Math.max(0, Math.min(0xFFFF, ts));
+        byte lo = (byte) (v & 0xFF);
+        byte hi = (byte) ((v >>> 8) & 0xFF);
+        if (reading && serial != null) {
+            try {
+                byte[] resp = serial.sendCommand(0x08, new byte[]{ lo, hi }, 64, defaultTimeoutMs);
+                validateResponse(resp);
+            } catch (Exception e) {
+                pendingTsAdc = v;
+            }
+        } else {
+            pendingTsAdc = v;
+        }
+    }
+
+    // Envía todos los comandos pendientes acumulados
+    private void flushPendingCommands() {
+        if (serial == null) return;
+        // LED mask
+        if (pendingLedMask != null) {
+            try { byte[] r = serial.sendCommand(0x01, new byte[]{ (byte)(pendingLedMask & 0xFF) }, 64, defaultTimeoutMs); validateResponse(r); } catch (Exception ignored) {}
+            pendingLedMask = null;
+        }
+        // Ts DIP
+        if (pendingTsDip != null) {
+            int v = pendingTsDip;
+            byte lo = (byte) (v & 0xFF), hi = (byte)((v >>> 8) & 0xFF);
+            try { byte[] r = serial.sendCommand(0x03, new byte[]{ lo, hi }, 64, defaultTimeoutMs); validateResponse(r); } catch (Exception ignored) {}
+            pendingTsDip = null;
+        }
+        // Ts ADC
+        if (pendingTsAdc != null) {
+            int v = pendingTsAdc;
+            byte lo = (byte) (v & 0xFF), hi = (byte)((v >>> 8) & 0xFF);
+            try { byte[] r = serial.sendCommand(0x08, new byte[]{ lo, hi }, 64, defaultTimeoutMs); validateResponse(r); } catch (Exception ignored) {}
+            pendingTsAdc = null;
+        }
+    }
+
+    // ====== Orquestación de conexión con reintentos (no bloquea el hilo de UI) ======
+    public void startTransmissionWithRetryAsync(long retryDelayMs) {
+        long delay = (retryDelayMs <= 0) ? 500L : retryDelayMs;
+        synchronized (this) {
+            if (reading || connecting) return;
+            connecting = true;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                while (true) {
+                    try {
+                        startTransmission();
+                        break;
+                    } catch (Exception e) {
+                        try { close(); } catch (Exception ignored) {}
+                        try { Thread.sleep(delay); } catch (InterruptedException ie) { break; }
+                    }
+                }
+            } finally {
+                connecting = false;
+            }
+        }, "Serial-ConnectRetry-" + port);
+        t.setDaemon(true);
+        t.start();
     }
 
     // Opcionales: exponer tamaño de buffers y limpiar manualmente

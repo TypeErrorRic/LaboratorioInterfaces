@@ -369,27 +369,10 @@ public class Laboratorio1 extends javax.swing.JFrame {
         if (port == null || port.isEmpty()) {
             javax.swing.JOptionPane.showMessageDialog(this, "Seleccione un puerto COM válido.");
         } else {
-            try {
-                SerialProtocolRunner r = new SerialProtocolRunner(port, 115200);
-                r.startTransmission();
-                sharedRunner = r;
-                System.out.println("Transmisión iniciada en " + port + " @115200 (desde jButton1)");
-            } catch (Exception e) {
-                System.err.println("No se pudo iniciar transmisión en " + port + ": " + e.getMessage());
-                try {
-                    // Intentar liberar el puerto por nombre (p.ej. si quedó bloqueado)
-                    SerialIO.forceClose(port);
-                } catch (Exception ignored) {}
-                try {
-                    // Cerrar conexión si falló el ACK u otro error al iniciar
-                    // y asegurar que el puerto no quede abierto.
-                    SerialProtocolRunner toClose = sharedRunner;
-                    if (toClose != null) {
-                        toClose.close();
-                        sharedRunner = null;
-                    }
-                } catch (Exception ignored) {}
-            }
+            SerialProtocolRunner r = new SerialProtocolRunner(port, 115200);
+            sharedRunner = r;
+            r.startTransmissionWithRetryAsync(500);
+            System.out.println("Intentando iniciar transmisión en " + port + " @115200 (reintentos automáticos)");
         }
 
         graficaAnalogica.iniciarGraficacion("1", 50); // cada 100 ms

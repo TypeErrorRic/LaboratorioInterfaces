@@ -370,15 +370,23 @@ public class SerialProtocolRunner {
             connecting = true;
         }
         Thread t = new Thread(() -> {
+            int attempt = 1;
             try {
                 while (true) {
-                    if (!connecting || Thread.currentThread().isInterrupted()) break;
+                    if (!connecting || Thread.currentThread().isInterrupted()) {
+                        System.out.println("Reintentos cancelados para " + port);
+                        break;
+                    }
+                    System.out.println("Intentando conectar a " + port + " (intento " + attempt + ")...");
                     try {
                         startTransmission();
+                        System.out.println("Transmision iniciada en " + port + " (intento " + attempt + ")");
                         break;
                     } catch (Exception e) {
+                        System.err.println("Error de conexion en " + port + " (intento " + attempt + "): " + e.getMessage());
                         try { close(); } catch (Exception ignored) {}
-                        try { Thread.sleep(delay); } catch (InterruptedException ie) { break; }
+                        attempt++;
+                        try { Thread.sleep(delay); } catch (InterruptedException ie) { System.out.println("Reintento interrumpido para " + port); break; }
                     }
                 }
             } finally {

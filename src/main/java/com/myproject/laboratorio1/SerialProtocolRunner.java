@@ -240,19 +240,42 @@ public class SerialProtocolRunner {
 
     // Valida respuesta con encabezado 55 AB ... CHK (XOR de [status,cmd,len]+payload)
     private static boolean validateResponse(byte[] resp) {
-        if (resp == null || resp.length < 6) return false;
+        if (resp == null) {
+            System.out.println("validateResponse: resp=null");
+            return false;
+        }
+        StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < resp.length; i++) {
+            hex.append(String.format("%02X", resp[i]));
+            if (i < resp.length - 1) hex.append(' ');
+        }
+        if (resp.length < 6) {
+            System.out.println("validateResponse: too short len=" + resp.length + " bytes=" + hex);
+            return false;
+        }
         int idx = indexOf(resp, new byte[]{0x55, (byte) 0xAB});
-        if (idx < 0 || idx + 5 >= resp.length) return false;
+        if (idx < 0 || idx + 5 >= resp.length) {
+            System.out.println("validateResponse: header not found or short; len=" + resp.length + " bytes=" + hex);
+            return false;
+        }
         int status = resp[idx + 2] & 0xFF;
         int cmd = resp[idx + 3] & 0xFF;
         int len = resp[idx + 4] & 0xFF;
         int expected = 5 + len + 1;
-        if (idx + expected > resp.length) return false;
+        if (idx + expected > resp.length) {
+            System.out.println("validateResponse: incomplete payload; idx=" + idx + " lenField=" + len + " expected=" + expected + " total=" + resp.length + " bytes=" + hex);
+            return false;
+        }
         int calc = 0;
         calc ^= status; calc ^= cmd; calc ^= len;
         for (int i = 0; i < len; i++) calc ^= (resp[idx + 5 + i] & 0xFF);
         int chk = resp[idx + 5 + len] & 0xFF;
-        return (calc & 0xFF) == chk;
+        boolean ok = ((calc & 0xFF) == chk);
+        System.out.println("validateResponse: idx=" + idx + " status=0x" + String.format("%02X", status) +
+                " cmd=0x" + String.format("%02X", cmd) + " len=" + len +
+                " calc=0x" + String.format("%02X", (calc & 0xFF)) + " chk=0x" + String.format("%02X", chk) +
+                " ok=" + ok + " bytes=" + hex);
+        return ok;
     }
 
     // ========= Comandos PC->MCU (55 AA CMD LEN PAYLOAD CHK) =========

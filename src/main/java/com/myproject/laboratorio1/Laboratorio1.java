@@ -34,11 +34,9 @@ public class Laboratorio1 extends javax.swing.JFrame {
         graficaDigital = new LineGraph("Señal Digital", "Tiempo", "Valor", 100);
         panelSenalAnalogica.add(graficaAnalogica.getChartPanel(), BorderLayout.CENTER);
         panelSenalDigital.add(graficaDigital.getChartPanel(), BorderLayout.CENTER);
-<<<<<<< HEAD
         
         // Establecer títulos iniciales basados en las selecciones por defecto de los ComboBox
         actualizarTitulosIniciales();
-=======
 
         // Menú desplegable de puertos y botón Iniciar
         comboPuertos = new javax.swing.JComboBox<>(SerialIO.listPorts());
@@ -53,7 +51,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 System.out.println("Transmision cancelada por cambio de puerto");
             }
         });
->>>>>>> Ricardo
     }
 
     /**

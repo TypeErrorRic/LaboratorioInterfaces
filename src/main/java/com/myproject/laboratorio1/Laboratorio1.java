@@ -358,6 +358,13 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private void jToggleButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
         // TODO add your handling code here:
         actualizarToggle(jToggleButton3);
+        // Al presionar, establecer tasa de muestreo ADC a 20 ms
+        SerialProtocolRunner r = sharedRunner;
+        int tsMs = 20;
+        if (r != null) {
+            // Enviar comando a la MCU
+            r.commandSetTsAdc(tsMs);
+        }
     }
 
     private void jToggleButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed

@@ -18,6 +18,7 @@ public class SerialProtocolRunner {
     private volatile boolean reading;
     private Thread readerThread;
     private volatile boolean connecting;
+    private Thread connectThread;
 
     // Buffers FIFO separados (capacidad fija con recorte)
     private static final int BUFFER_CAPACITY = 512;
@@ -34,6 +35,8 @@ public class SerialProtocolRunner {
     public SerialProtocolRunner(String port, int baud) {
         this.port = port;
         this.baud = baud;
+        // Auto-arranca reintentos de conexión sin bloquear UI
+        startTransmissionWithRetryAsync(500);
     }
 
     // Abre el puerto si no está abierto
@@ -96,8 +99,10 @@ public class SerialProtocolRunner {
         reading = false;
         connecting = false;
         try { if (readerThread != null) readerThread.interrupt(); } catch (Exception ignored) {}
+        try { if (connectThread != null) connectThread.interrupt(); } catch (Exception ignored) {}
         try { if (serial != null) serial.close(); } catch (Exception ignored) {}
         serial = null;
+        connectThread = null;
         try { SerialIO.forceClose(port); } catch (Exception ignored) {}
         try { Thread.sleep(50); } catch (InterruptedException ignored) {}
         synchronized (REGISTRY_LOCK) {
@@ -253,7 +258,7 @@ public class SerialProtocolRunner {
     // ========= Comandos PC->MCU (55 AA CMD LEN PAYLOAD CHK) =========
     // Si la comunicación está iniciada: envía ya. Si no: queda pendiente para enviar al iniciar.
 
-    // 0x01 Set LED mask (LEN=1). Payload: [mask]
+    // 0x01 Set LED mask (LEN=1, unsigned). Payload: [mask]
     public synchronized void commandSetLedMask(int mask) {
         int m = mask & 0xFF;
         if (reading && serial != null) {
@@ -268,7 +273,24 @@ public class SerialProtocolRunner {
         }
     }
 
-    // 0x03 Set Ts DIP (LEN=2, uint16 LE)
+    // Aceptar máscara en binario ("10101010" o con prefijo 0b)
+    public synchronized void commandSetLedMask(String binaryMask) {
+        int m = parseBinaryMask(binaryMask);
+        commandSetLedMask(m);
+    }
+
+    private static int parseBinaryMask(String binaryMask) {
+        if (binaryMask == null) throw new IllegalArgumentException("Máscara binaria nula");
+        String s = binaryMask.trim();
+        if (s.startsWith("0b") || s.startsWith("0B")) s = s.substring(2);
+        if (s.isEmpty()) throw new IllegalArgumentException("Máscara binaria vacía");
+        if (!s.matches("[01]+")) throw new IllegalArgumentException("Máscara debe contener solo 0 y 1");
+        if (s.length() > 8) throw new IllegalArgumentException("Máscara binaria de máximo 8 bits");
+        int val = Integer.parseInt(s, 2);
+        return val & 0xFF;
+    }
+
+    // 0x03 Set Ts DIP (LEN=2, uint16 LE, unsigned ms)
     public synchronized void commandSetTsDip(int ts) {
         int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
@@ -285,9 +307,15 @@ public class SerialProtocolRunner {
         }
     }
 
+    // Overload explícito para unsigned mediante long (ms)
+    public synchronized void commandSetTsDip(long tsMs) {
+        long cl = Math.max(0L, Math.min(0xFFFFL, tsMs));
+        commandSetTsDip((int) cl);
+    }
+
     // (Eliminados) 0x05 Streaming y 0x06 Snapshot: no se usan
 
-    // 0x08 Set Ts ADC (LEN=2, uint16 LE)
+    // 0x08 Set Ts ADC (LEN=2, uint16 LE, unsigned ms)
     public synchronized void commandSetTsAdc(int ts) {
         int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
@@ -302,6 +330,12 @@ public class SerialProtocolRunner {
         } else {
             pendingTsAdc = v;
         }
+    }
+
+    // Overload explícito para unsigned mediante long (ms)
+    public synchronized void commandSetTsAdc(long tsMs) {
+        long cl = Math.max(0L, Math.min(0xFFFFL, tsMs));
+        commandSetTsAdc((int) cl);
     }
 
     // Envía todos los comandos pendientes acumulados
@@ -338,6 +372,7 @@ public class SerialProtocolRunner {
         Thread t = new Thread(() -> {
             try {
                 while (true) {
+                    if (!connecting || Thread.currentThread().isInterrupted()) break;
                     try {
                         startTransmission();
                         break;
@@ -351,6 +386,7 @@ public class SerialProtocolRunner {
             }
         }, "Serial-ConnectRetry-" + port);
         t.setDaemon(true);
+        this.connectThread = t;
         t.start();
     }
 
@@ -362,6 +398,11 @@ public class SerialProtocolRunner {
         synchronized (adcBuffer) { adcBuffer.clear(); }
         synchronized (digitalBuffer) { digitalBuffer.clear(); }
     }
+
+    // Estado de conexion/transmision
+    public boolean isTransmissionActive() { return reading; }
+    public boolean isConnecting() { return connecting; }
+    public String getPort() { return port; }
 
     private static class Frame {
         final int digital;

@@ -39,13 +39,15 @@ public class Laboratorio1 extends javax.swing.JFrame {
         comboPuertos = new javax.swing.JComboBox<>(SerialIO.listPorts());
         panelSuperior.add(new javax.swing.JLabel(" Puerto: "));
         panelSuperior.add(comboPuertos);
-
-        // Comentario: para cambiar su posición, puedes añadir los componentes
-        // al panel que prefieras y ajustar su layout. Por ejemplo:
-        // panelInferior.add(comboPuertos);
-        // o con BorderLayout: panelInferior.add(comboPuertos, java.awt.BorderLayout.LINE_START);
-        // Si usas GroupLayout, edita el GroupLayout de panelInferior para ubicarlos donde quieras.
-
+        // Cancelar transmision/inicio en curso al cambiar de puerto
+        comboPuertos.addActionListener(e -> {
+            SerialProtocolRunner r = sharedRunner;
+            if (r != null) {
+                try { r.close(); } catch (Exception ignored) {}
+                sharedRunner = null;
+                System.out.println("Transmision cancelada por cambio de puerto");
+            }
+        });
     }
 
     /**
@@ -361,6 +363,22 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private void jToggleButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
         // TODO add your handling code here:
         actualizarToggle(jToggleButton4);
+
+        // Al presionar, leer y volcar muestras pendientes hasta agotar buffer (t = -1)
+        SerialProtocolRunner r = sharedRunner;
+        if (r != null) {
+            while (true) {
+                SerialProtocolRunner.TimedValue dig = r.getDigitalPins();
+                if (dig == null || dig.tMs < 0) break; // no hay mas datos
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("t=%dms DIG=0x%02X ", dig.tMs, dig.value));
+                SerialProtocolRunner.TimedValue tv = r.getAdcValue(1);
+                sb.append(String.format("AN%d=%d(t=%dms) ", 1, tv.value, tv.tMs));
+                System.out.println(sb.toString().trim());
+            }
+        } else {
+            System.out.println("Runner no iniciado; use el boton Iniciar.");
+        }
     }
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
@@ -369,9 +387,27 @@ public class Laboratorio1 extends javax.swing.JFrame {
         if (port == null || port.isEmpty()) {
             javax.swing.JOptionPane.showMessageDialog(this, "Seleccione un puerto COM válido.");
         } else {
+            // Cerrar runner previo si existe (cancelar inicio en curso)
+            SerialProtocolRunner prev = sharedRunner;
+            if (prev != null) {
+                try { prev.close(); } catch (Exception ignored) {}
+                sharedRunner = null;
+            }
+
             SerialProtocolRunner r = new SerialProtocolRunner(port, 115200);
             sharedRunner = r;
             r.startTransmissionWithRetryAsync(500);
+            // Esperar asincronamente hasta que la transmision este activa y avisar
+            new Thread(() -> {
+                SerialProtocolRunner rr = r;
+                while (sharedRunner == rr && !rr.isTransmissionActive() && rr.isConnecting()) {
+                    try { Thread.sleep(100); } catch (InterruptedException ignored) { return; }
+                }
+                if (sharedRunner == rr && rr.isTransmissionActive()) {
+                    System.out.println("Transmision lista en " + rr.getPort());
+                }
+            }, "Protocol-StartWait").start();
+            System.out.println("Estado -> conectando=" + r.isConnecting() + ", activo=" + r.isTransmissionActive());
             System.out.println("Intentando iniciar transmisión en " + port + " @115200 (reintentos automáticos)");
         }
 
@@ -483,13 +519,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
         }
     }
 
-    private static String bytesToHex(byte[] data) {
-        if (data == null || data.length == 0) return "";
-        StringBuilder sb = new StringBuilder(data.length * 3);
-        for (byte b : data) sb.append(String.format("%02X ", b));
-        return sb.toString().trim();
-    }
-
     /**
      * @param args the command line arguments
      */
@@ -517,29 +546,6 @@ public class Laboratorio1 extends javax.swing.JFrame {
         }
         //</editor-fold>
 
-        // No abrir comunicación aquí; depende del botón (jButton1)
-
-        // Hilo que imprime cada segundo desde el runner seleccionado con el botón "Iniciar"
-        Thread printer = new Thread(() -> {
-            while (true) {
-                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
-                SerialProtocolRunner r = sharedRunner;
-                if (r != null) {
-                    SerialProtocolRunner.TimedValue dig = r.getDigitalPins();
-                    if (dig != null && dig.tMs >= 0) {
-                        StringBuilder sb = new StringBuilder();
-                        sb.append(String.format("t=%dms DIG=0x%02X ", dig.tMs, dig.value));
-                        for (int ch = 0; ch < 8; ch++) {
-                            SerialProtocolRunner.TimedValue tv = r.getAdcValue(ch);
-                            sb.append(String.format("AN%d=%d(t=%dms) ", ch, tv.value, tv.tMs));
-                        }
-                        System.out.println(sb.toString().trim());
-                    }
-                }
-            }
-        }, "Protocol-Printer");
-        printer.setDaemon(true);
-        printer.start();
         /* Create and display the form */
         java.awt.EventQueue.invokeLater(new Runnable() {
             public void run() {

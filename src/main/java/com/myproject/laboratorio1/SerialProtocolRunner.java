@@ -6,6 +6,15 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
+/**
+ * Orquestador del protocolo serie de la práctica.
+ *
+ * Administra la conexión al puerto serie, el inicio/paro del streaming,
+ * la lectura en segundo plano de las tramas 0x7A 0x7B ... 0x7C y
+ * expone utilidades para enviar comandos (LED mask, Ts DIP, Ts ADC).
+ *
+ * El estilo de documentación sigue el usado en {@link SerialIO} para Doxygen/Javadoc.
+ */
 public class SerialProtocolRunner {
     // Registro global por puerto para evitar instancias simultáneas que se pisen
     private static final Object REGISTRY_LOCK = new Object();
@@ -32,6 +41,13 @@ public class SerialProtocolRunner {
     private Integer pendingTsDip = null;           // 0..65535 (LE)
     private Integer pendingTsAdc = null;           // 0..65535 (LE)
 
+    /**
+     * Crea un runner asociado a un puerto y baud rate.
+     * Inicia reintentos de conexión en segundo plano sin bloquear la UI.
+     *
+     * @param port Nombre del puerto. Ej: "COM3", "/dev/ttyUSB0".
+     * @param baud Baud rate. Ej: 9600, 115200.
+     */
     public SerialProtocolRunner(String port, int baud) {
         this.port = port;
         this.baud = baud;
@@ -50,6 +66,14 @@ public class SerialProtocolRunner {
     }
 
     // Inicia transmisión en hilo: habilita streaming (CMD=0x05, 0x01) y arranca el lector que llena el buffer
+    /**
+     * Inicia la transmisión en streaming.
+     *
+     * Abre el puerto si es necesario, envía el comando de habilitar streaming (CMD=0x05, payload=0x01)
+     * y arranca el hilo lector que parsea tramas y llena los buffers.
+     *
+     * @throws Exception si no se puede abrir el puerto o si el ACK es inválido.
+     */
     public synchronized void startTransmission() throws Exception {
         // Si ya estamos leyendo con esta instancia, no volver a iniciar
         if (reading) return;
@@ -85,6 +109,10 @@ public class SerialProtocolRunner {
     }
 
     // Detiene transmisión y mantiene el puerto abierto
+    /**
+     * Detiene la transmisión en streaming y mantiene el puerto abierto.
+     * Envía el comando de deshabilitar streaming (CMD=0x05, payload=0x00).
+     */
     public synchronized void stopTransmission() {
         try {
             if (serial != null) {
@@ -97,6 +125,12 @@ public class SerialProtocolRunner {
     }
 
     // Cierra el puerto y detiene cualquier lectura en curso
+    /**
+     * Cierra y limpia recursos.
+     *
+     * Detiene la lectura, cancela reintentos, cierra el puerto serie y
+     * libera el registro de instancia activa para el puerto.
+     */
     public synchronized void close() {
         reading = false;
         connecting = false;
@@ -114,6 +148,13 @@ public class SerialProtocolRunner {
     }
 
     // Devuelve (y consume) el valor ADC del canal [0..7] + tiempo en ms desde start
+    /**
+     * Devuelve (y consume) el valor ADC del canal indicado.
+     *
+     * @param index Índice del canal ADC [0..7].
+     * @return TimedValue con el valor y el tiempo relativo en ms desde el inicio; si no hay datos, devuelve tMs=-1.
+     * @throws IllegalArgumentException si el índice está fuera de rango.
+     */
     public TimedValue getAdcValue(int index) {
         if (index < 0 || index >= 8) throw new IllegalArgumentException("Índice ADC inválido (0-7)");
         AdcSample s;
@@ -123,6 +164,11 @@ public class SerialProtocolRunner {
     }
 
     // Devuelve (y consume) el byte de pines digitales (8 bits) + tiempo en ms desde start
+    /**
+     * Devuelve (y consume) el estado de pines digitales (8 bits).
+     *
+     * @return TimedValue con el byte de pines (LSB=d0) y tiempo relativo en ms; si no hay datos, devuelve tMs=-1.
+     */
     public TimedValue getDigitalPins() {
         DigitalSample s;
         synchronized (digitalBuffer) { s = digitalBuffer.pollFirst(); }
@@ -284,6 +330,12 @@ public class SerialProtocolRunner {
     // Si la comunicación está iniciada: envía ya. Si no: queda pendiente para enviar al iniciar.
 
     // 0x01 Set LED mask (LEN=1, unsigned). Payload: [mask]
+    /**
+     * Envía el comando 0x01 para establecer la máscara de LEDs.
+     * Si no hay transmisión activa, se encola para enviarse al iniciar.
+     *
+     * @param mask Máscara de 8 bits (0..255).
+     */
     public synchronized void commandSetLedMask(int mask) {
         int m = mask & 0xFF;
         if (reading && serial != null) {
@@ -299,6 +351,13 @@ public class SerialProtocolRunner {
     }
 
     // Aceptar máscara en binario ("10101010" o con prefijo 0b)
+    /**
+     * Envía la máscara de LEDs expresada en binario.
+     * Acepta formato "10101010" o con prefijo "0b".
+     *
+     * @param binaryMask Cadena de bits (máx. 8).
+     * @throws IllegalArgumentException si el formato no es válido.
+     */
     public synchronized void commandSetLedMask(String binaryMask) {
         int m = parseBinaryMask(binaryMask);
         commandSetLedMask(m);
@@ -316,6 +375,12 @@ public class SerialProtocolRunner {
     }
 
     // 0x03 Set Ts DIP (LEN=2, uint16 LE, unsigned ms)
+    /**
+     * Envía el comando 0x03 para configurar el periodo de muestreo del DIP.
+     * Si no hay transmisión activa, se encola para enviarse al iniciar.
+     *
+     * @param ts Periodo en ms (uint16, 0..65535).
+     */
     public synchronized void commandSetTsDip(int ts) {
         int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
@@ -333,6 +398,11 @@ public class SerialProtocolRunner {
     }
 
     // Overload explícito para unsigned mediante long (ms)
+    /**
+     * Sobrecarga para valores sin signo utilizando long.
+     *
+     * @param tsMs Periodo en ms (0..65535).
+     */
     public synchronized void commandSetTsDip(long tsMs) {
         long cl = Math.max(0L, Math.min(0xFFFFL, tsMs));
         commandSetTsDip((int) cl);
@@ -341,6 +411,12 @@ public class SerialProtocolRunner {
     // (Eliminados) 0x05 Streaming y 0x06 Snapshot: no se usan
 
     // 0x08 Set Ts ADC (LEN=2, uint16 LE, unsigned ms)
+    /**
+     * Envía el comando 0x08 para configurar el periodo de muestreo del ADC.
+     * Si no hay transmisión activa, se encola para enviarse al iniciar.
+     *
+     * @param ts Periodo en ms (uint16, 0..65535).
+     */
     public synchronized void commandSetTsAdc(int ts) {
         int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
@@ -358,6 +434,11 @@ public class SerialProtocolRunner {
     }
 
     // Overload explícito para unsigned mediante long (ms)
+    /**
+     * Sobrecarga para valores sin signo utilizando long.
+     *
+     * @param tsMs Periodo en ms (0..65535).
+     */
     public synchronized void commandSetTsAdc(long tsMs) {
         long cl = Math.max(0L, Math.min(0xFFFFL, tsMs));
         commandSetTsAdc((int) cl);
@@ -388,6 +469,14 @@ public class SerialProtocolRunner {
     }
 
     // ====== Orquestación de conexión con reintentos (no bloquea el hilo de UI) ======
+    /**
+     * Inicia la transmisión con reintentos en segundo plano.
+     *
+     * Crea un hilo que intentará conectar y llamar a startTransmission(),
+     * esperando entre intentos el tiempo indicado.
+     *
+     * @param retryDelayMs Tiempo entre intentos en ms (mínimo 500ms si se pasa <= 0).
+     */
     public void startTransmissionWithRetryAsync(long retryDelayMs) {
         long delay = (retryDelayMs <= 0) ? 500L : retryDelayMs;
         synchronized (this) {
@@ -434,17 +523,37 @@ public class SerialProtocolRunner {
     }
 
     // Opcionales: exponer tamaño de buffers y limpiar manualmente
+    /**
+     * Devuelve el número de elementos actualmente encolados en los buffers.
+     *
+     * @return Cantidad total de muestras pendientes (ADC + digitales).
+     */
     public int getBufferedCount() {
         synchronized (adcBuffer) { synchronized (digitalBuffer) { return adcBuffer.size() + digitalBuffer.size(); } }
     }
+    /**
+     * Limpia manualmente los buffers de ADC y digitales.
+     */
     public void clearBuffer() {
         synchronized (adcBuffer) { adcBuffer.clear(); }
         synchronized (digitalBuffer) { digitalBuffer.clear(); }
     }
 
     // Estado de conexion/transmision
+    /**
+     * Indica si el hilo de lectura/streaming está activo.
+     * @return true si está leyendo; false en caso contrario.
+     */
     public boolean isTransmissionActive() { return reading; }
+    /**
+     * Indica si hay un proceso de conexión con reintentos en curso.
+     * @return true si se está intentando conectar; false en caso contrario.
+     */
     public boolean isConnecting() { return connecting; }
+    /**
+     * Devuelve el nombre del puerto asociado a esta instancia.
+     * @return Nombre del puerto (por ejemplo, "COM3").
+     */
     public String getPort() { return port; }
 
     private static class Frame {

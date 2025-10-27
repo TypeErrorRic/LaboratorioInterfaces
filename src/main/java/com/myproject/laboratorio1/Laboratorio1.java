@@ -5,6 +5,7 @@
 package com.myproject.laboratorio1;
 
 import java.awt.BorderLayout;
+import java.util.Arrays;
 
 import org.jfree.data.xy.XYSeries;
 
@@ -21,6 +22,10 @@ public class Laboratorio1 extends javax.swing.JFrame {
      */
     private LineGraph graficaAnalogica;
     private LineGraph graficaDigital;
+    // Componentes para puerto y arranque
+    private javax.swing.JComboBox<String> comboPuertos;
+    // Runner compartido para impresión periódica desde main
+    private static volatile SerialProtocolRunner sharedRunner;
     
     public Laboratorio1() {
         initComponents();
@@ -29,9 +34,26 @@ public class Laboratorio1 extends javax.swing.JFrame {
         graficaDigital = new LineGraph("Señal Digital", "Tiempo", "Valor", 100);
         panelSenalAnalogica.add(graficaAnalogica.getChartPanel(), BorderLayout.CENTER);
         panelSenalDigital.add(graficaDigital.getChartPanel(), BorderLayout.CENTER);
+<<<<<<< HEAD
         
         // Establecer títulos iniciales basados en las selecciones por defecto de los ComboBox
         actualizarTitulosIniciales();
+=======
+
+        // Menú desplegable de puertos y botón Iniciar
+        comboPuertos = new javax.swing.JComboBox<>(SerialIO.listPorts());
+        panelSuperior.add(new javax.swing.JLabel(" Puerto: "));
+        panelSuperior.add(comboPuertos);
+        // Cancelar transmision/inicio en curso al cambiar de puerto
+        comboPuertos.addActionListener(e -> {
+            SerialProtocolRunner r = sharedRunner;
+            if (r != null) {
+                try { r.close(); } catch (Exception ignored) {}
+                sharedRunner = null;
+                System.out.println("Transmision cancelada por cambio de puerto");
+            }
+        });
+>>>>>>> Ricardo
     }
 
     /**
@@ -342,19 +364,67 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private void jToggleButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
         // TODO add your handling code here:
         actualizarToggle(jToggleButton3);
+        // Al presionar, establecer tasa de muestreo ADC a 20 ms
+        SerialProtocolRunner r = sharedRunner;
+        // Enviar comando a la MCU
+        SerialProtocolRunner.commandSetTsAdc(r, 20);
+        SerialProtocolRunner.commandSetLedMask(r, "0100");
+        SerialProtocolRunner.commandSetTsDip(r, 20);
     }
 
     private void jToggleButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
         // TODO add your handling code here:
         actualizarToggle(jToggleButton4);
+
+        // Al presionar, leer y volcar muestras pendientes hasta agotar buffer (t = -1)
+        SerialProtocolRunner r = sharedRunner;
+        // tval almacena el tiempo del último dato ADC leído para calcular delta de tiempo
+        long tval = -1L;
+        if (r != null) {
+            while (true) {
+                SerialProtocolRunner.TimedValue dig = r.getDigitalPins();
+                if (dig == null || dig.tMs < 0) break; // no hay mas datos
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("t=%dms DIG=0x%02X ", dig.tMs, dig.value));
+                SerialProtocolRunner.TimedValue tv = r.getAdcValue(1);
+                // Delta de tiempo entre muestras ADC consecutivas (datos continuos)
+                long dt = (tval >= 0L) ? (tv.tMs - tval) : 0L;
+                sb.append(String.format("AN%d=%d(t=%dms dT=%dms) ", 1, tv.value, tv.tMs, dt));
+                System.out.println(sb.toString().trim());
+                tval = tv.tMs;
+            }
+        } else {
+            System.out.println("Runner no iniciado; use el boton Iniciar.");
+        }
     }
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        // TODO add your handling code here:
-        // double x = System.currentTimeMillis()/1000.0;
-        // double y = Math.random()*10;
-        // graficaAnalogica.addDato(x,y);
-        // graficaDigital.addDato(x,y);
+        // Iniciar transmisión del protocolo en el puerto seleccionado
+        String port = (comboPuertos != null) ? (String) comboPuertos.getSelectedItem() : null;
+        if (port == null || port.isEmpty()) {
+            javax.swing.JOptionPane.showMessageDialog(this, "Seleccione un puerto COM válido.");
+        } else {
+            // Cerrar runner previo si existe (cancelar inicio en curso)
+            SerialProtocolRunner prev = sharedRunner;
+            if (prev != null) {
+                try { prev.close(); } catch (Exception ignored) {}
+                sharedRunner = null;
+            }
+            SerialProtocolRunner r = new SerialProtocolRunner(port, 115200);
+            sharedRunner = r;
+            r.startTransmissionWithRetryAsync(500);
+            // Esperar asincronamente hasta que la transmision este activa y avisar
+            new Thread(() -> {
+                SerialProtocolRunner rr = r;
+                while (sharedRunner == rr && !rr.isTransmissionActive() && rr.isConnecting()) {
+                    try { Thread.sleep(100); } catch (InterruptedException ignored) { return; }
+                }
+                if (sharedRunner == rr && rr.isTransmissionActive()) {
+                    System.out.println("Transmision lista en " + rr.getPort());
+                }
+            }, "Protocol-StartWait").start();
+        }
+
         graficaAnalogica.iniciarGraficacion("1", 50); // cada 100 ms
         graficaDigital.iniciarGraficacion("2", 50); // cada 100 ms
     }//GEN-LAST:event_jButton1ActionPerformed

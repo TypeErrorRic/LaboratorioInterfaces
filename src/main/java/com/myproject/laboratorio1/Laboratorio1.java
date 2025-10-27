@@ -390,6 +390,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 System.out.println(sb.toString().trim());
                 tval = tv.tMs;
             }
+            System.out.printf("Transmisión activa: %b%n", r.isTransmissionActive());
         } else {
             System.out.println("Runner no iniciado; use el boton Iniciar.");
         }

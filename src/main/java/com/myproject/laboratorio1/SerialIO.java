@@ -161,6 +161,29 @@ public class SerialIO implements AutoCloseable {
         }
     }
 
+    /**
+     * Indica si el puerto serie subyacente sigue abierto.
+     * @return true si está abierto; false en caso contrario.
+     */
+    public boolean isOpen() {
+        return port != null && port.isOpen();
+    }
+
+    /**
+     * Verifica si el puerto sigue operativo (detecta desconexiones fisicas).
+     * Intenta consultar bytes disponibles; valores negativos o excepciones indican problema.
+     * @return true si el puerto esta abierto y operativo; false si esta cerrado o con error.
+     */
+    public boolean isAlive() {
+        try {
+            if (port == null || !port.isOpen()) return false;
+            int avail = port.bytesAvailable();
+            return avail >= 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void ensureOpen() throws IOException {
         if (port == null || !port.isOpen()) {
             throw new IOException("El puerto no está abierto.");

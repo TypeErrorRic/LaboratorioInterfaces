@@ -1,6 +1,7 @@
 package com.myproject.laboratorio1;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -323,6 +324,10 @@ public class SerialProtocolRunner {
                 } else {
                     try { Thread.sleep(10); } catch (InterruptedException ignored) { break; }
                 }
+            } catch (IOException ioe) {
+                System.err.println("Puerto desconectado o error de E/S: " + ioe.getMessage());
+                reading = false;
+                break;
             } catch (Exception e) {
                 System.err.println("Error en readLoop: " + e.getMessage());
                 try { Thread.sleep(50); } catch (InterruptedException ignored) {}
@@ -716,7 +721,38 @@ public class SerialProtocolRunner {
      * Indica si el hilo de lectura/streaming está activo.
      * @return true si está leyendo; false en caso contrario.
      */
-    public boolean isTransmissionActive() { return reading; }
+    public boolean isTransmissionActive() {
+        if (!reading) return false;
+
+        // 1) Verificar que el puerto siga listado por el SO
+        boolean listed = false;
+        try {
+            String[] ports = SerialIO.listPorts();
+            if (ports != null) {
+                for (String p : ports) {
+                    if (p != null && p.equalsIgnoreCase(port)) { listed = true; break; }
+                }
+            }
+        } catch (Exception ignored) {}
+        if (!listed) {
+            reading = false;
+            return false;
+        }
+
+        // 2) Verificar que el puerto siga operativo
+        if (serial == null) {
+            reading = false;
+            return false;
+        }
+        try {
+            if (!serial.isAlive()) {
+                reading = false;
+            }
+        } catch (Exception ignored) {
+            reading = false;
+        }
+        return reading;
+    }
     /**
      * Indica si hay un proceso de conexión con reintentos en curso.
      * @return true si se está intentando conectar; false en caso contrario.

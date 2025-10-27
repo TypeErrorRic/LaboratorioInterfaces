@@ -44,7 +44,8 @@ public class SerialProtocolRunner {
         if (serial == null) {
             try { SerialIO.forceClose(port); } catch (Exception ignored) {}
             serial = new SerialIO(port, baud);
-            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+            // Dar tiempo al bootloader (Arduino UNO/Nano reinicia al abrir el puerto)
+            try { Thread.sleep(1200); } catch (InterruptedException ignored) {}
         }
     }
 
@@ -67,7 +68,8 @@ public class SerialProtocolRunner {
         try {
         ensureOpen();
         t0Ms = System.currentTimeMillis();
-        byte[] resp = serial.sendCommand(0x05, new byte[]{ 0x01 }, 64, defaultTimeoutMs);
+        // Dar mas margen para el ACK inicial (MCU puede estar arrancando)
+        byte[] resp = serial.sendCommand(0x05, new byte[]{ 0x01 }, 64, Math.max(1500L, defaultTimeoutMs));
         if (!validateResponse(resp)) {
             throw new IllegalStateException("ACK inválido al habilitar streaming");
         }
@@ -422,14 +424,12 @@ public class SerialProtocolRunner {
         t.start();
     }
 
-    // Cierra serial/lector sin alterar "connecting" ni interrumpir el hilo de reintentos
+    // Deja el puerto abierto pero detiene lector/estados para volver a intentar sin resetear el MCU
     private synchronized void resetForRetry() {
         reading = false;
         try { if (readerThread != null) readerThread.interrupt(); } catch (Exception ignored) {}
-        try { if (serial != null) serial.close(); } catch (Exception ignored) {}
-        serial = null;
-        try { SerialIO.forceClose(port); } catch (Exception ignored) {}
-        try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+        // No cerrar el puerto: evitar reset repetido en placas que reinician al abrir
+        try { Thread.sleep(100); } catch (InterruptedException ignored) {}
         // No tocar: connecting, connectThread ni ACTIVE_BY_PORT
     }
 

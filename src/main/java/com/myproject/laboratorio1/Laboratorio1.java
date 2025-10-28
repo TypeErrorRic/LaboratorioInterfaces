@@ -118,11 +118,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
 
         jComboBox1.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "1", "2", "3", "4", "5", "6", "7", "8" }));
         jComboBox1.setPreferredSize(new java.awt.Dimension(40, 22));
-        jComboBox1.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jComboBox1ActionPerformed(evt);
-            }
-        });
+        jComboBox1.addActionListener(evt -> jComboBox1ActionPerformed(evt));
         jPanel4.add(jComboBox1);
 
         panelSenalAnalogica.add(jPanel4, java.awt.BorderLayout.PAGE_START);
@@ -343,57 +339,71 @@ public class Laboratorio1 extends javax.swing.JFrame {
         b.setFocusPainted(false);
     }
 
+    /**
+     * Envía el estado actual de los 4 LEDs al microcontrolador.
+     * Construye una máscara de 4 bits basada en el estado de los toggle buttons
+     * y envía el comando 0x01 (Set LED mask) al microcontrolador.
+     */
+    private void enviarEstadoLEDs() {
+        // Construir máscara de 4 bits basada en el estado de los 4 toggle buttons
+        // Bit 0 = LED0 (D8) = jToggleButton1
+        // Bit 1 = LED1 (D9) = jToggleButton2
+        // Bit 2 = LED2 (D10) = jToggleButton3
+        // Bit 3 = LED3 (D11) = jToggleButton4
+        int mask = 0;
+        if (jToggleButton1.isSelected()) mask |= 0b0001;  // LED0 (D8)
+        if (jToggleButton2.isSelected()) mask |= 0b0010;  // LED1 (D9)
+        if (jToggleButton3.isSelected()) mask |= 0b0100;  // LED2 (D10)
+        if (jToggleButton4.isSelected()) mask |= 0b1000;  // LED3 (D11)
+        
+        // Debugging: Imprimir información del comando
+        String binaryMask = String.format("%4s", Integer.toBinaryString(mask)).replace(' ', '0');
+        System.out.println("CMD Set LED Mask: 0x" + String.format("%02X", mask) + " (0b" + binaryMask + ")");
+        System.out.println(
+            "LEDs: [LED0=" + ((mask & 0b0001) != 0 ? "ON" : "OFF") + " LED1=" + ((mask & 0b0010) != 0 ? "ON" : "OFF") + 
+            " LED2=" + ((mask & 0b0100) != 0 ? "ON" : "OFF") + " LED3=" + ((mask & 0b1000) != 0 ? "ON" : "OFF") + "]");
+        
+        // Enviar comando al microcontrolador
+        SerialProtocolRunner r = sharedRunner;
+        if (r != null && r.isTransmissionActive()) {
+            SerialProtocolRunner.commandSetLedMask(r, mask);
+            System.out.println("  Estado: Comando enviado");
+        } else {
+            System.out.println("  Estado: Sin conexion - comando no enviado");
+        }
+    }
+
 
     private void btnGuardarActionPerformed(java.awt.event.ActionEvent evt) {
         botonGuardar.guardarComoCSV(graficaAnalogica.getSeriexy(), graficaDigital.getSeriexy(), this);
     }
     
     private void jToggleButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
-        // TODO add your handling code here:
+        // Actualizar apariencia del botón
         actualizarToggle(jToggleButton1);
+        // Enviar estado de todos los LEDs al microcontrolador
+        enviarEstadoLEDs();
     }
 
     private void jToggleButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
-        // TODO add your handling code here:
+        // Actualizar apariencia del botón
         actualizarToggle(jToggleButton2);
+        // Enviar estado de todos los LEDs al microcontrolador
+        enviarEstadoLEDs();
     }
 
     private void jToggleButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
-        // TODO add your handling code here:
+        // Actualizar apariencia del botón
         actualizarToggle(jToggleButton3);
-        // Al presionar, establecer tasa de muestreo ADC a 20 ms
-        SerialProtocolRunner r = sharedRunner;
-        // Enviar comando a la MCU
-        SerialProtocolRunner.commandSetTsAdc(r, 20);
-        SerialProtocolRunner.commandSetLedMask(r, "0100");
-        SerialProtocolRunner.commandSetTsDip(r, 20);
+        // Enviar estado de todos los LEDs al microcontrolador
+        enviarEstadoLEDs();
     }
 
     private void jToggleButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jToggleButton1ActionPerformed
-        // TODO add your handling code here:
+        // Actualizar apariencia del botón
         actualizarToggle(jToggleButton4);
-
-        // Al presionar, leer y volcar muestras pendientes hasta agotar buffer (t = -1)
-        SerialProtocolRunner r = sharedRunner;
-        // tval almacena el tiempo del último dato ADC leído para calcular delta de tiempo
-        long tval = -1L;
-        if (r != null) {
-            while (true) {
-                SerialProtocolRunner.TimedValue dig = r.getDigitalPins();
-                if (dig == null || dig.tMs < 0) break; // no hay mas datos
-                StringBuilder sb = new StringBuilder();
-                sb.append(String.format("t=%dms DIG=0x%02X ", dig.tMs, dig.value));
-                SerialProtocolRunner.TimedValue tv = r.getAdcValue(1);
-                // Delta de tiempo entre muestras ADC consecutivas (datos continuos)
-                long dt = (tval >= 0L) ? (tv.tMs - tval) : 0L;
-                sb.append(String.format("AN%d=%d(t=%dms dT=%dms) ", 1, tv.value, tv.tMs, dt));
-                System.out.println(sb.toString().trim());
-                tval = tv.tMs;
-            }
-            System.out.printf("Transmisión activa: %b%n", r.isTransmissionActive());
-        } else {
-            System.out.println("Runner no iniciado; use el boton Iniciar.");
-        }
+        // Enviar estado de todos los LEDs al microcontrolador
+        enviarEstadoLEDs();
     }
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed

@@ -478,20 +478,27 @@ public class Laboratorio1 extends javax.swing.JFrame {
         // Validar que no esté vacío
         if (!valorIngresado.isEmpty()) {
             try {
-                // Validar que sea un número válido y positivo
-                double valor = Double.parseDouble(valorIngresado);
+                // Validar que sea un número entero válido y positivo
+                int valor = Integer.parseInt(valorIngresado);
                 
                 if (valor > 0) {
                     // Actualizar la etiqueta que muestra el tiempo de muestreo actual
-                    TiempoMuestreoActualAnalogico.setText(valorIngresado);
+                    TiempoMuestreoActualAnalogico.setText(valorIngresado + " ms");
                     
                     // Limpiar el campo de texto después de actualizar
                     ValorMuestreoAnalogico.setText("");
                     
-                    System.out.println("Tiempo de muestreo analógico actualizado a: " + valorIngresado);
+                    // Enviar comando al microcontrolador (CMD 0x08: Set Ts ADC)
+                    SerialProtocolRunner r = sharedRunner;
+                    System.out.println("CMD Set Ts ADC: " + valor + " ms");
+                    if (r != null && r.isTransmissionActive()) {
+                        SerialProtocolRunner.commandSetTsAdc(r, valor);
+                        System.out.println("  Estado: Comando enviado al microcontrolador");
+                    } else {
+                        System.out.println("  Estado: Sin conexion - comando no enviado");
+                    }
                 } else {
                     // Manejar error si el valor no es positivo
-                    System.err.println("Error: El valor debe ser mayor que cero");
                     javax.swing.JOptionPane.showMessageDialog(this, 
                         "El tiempo de muestreo debe ser un valor positivo (mayor que 0)", 
                         "Valor inválido", 
@@ -499,15 +506,13 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 }
             } catch (NumberFormatException e) {
                 // Manejar error si el valor no es un número válido
-                System.err.println("Error: El valor ingresado no es un número válido");
                 javax.swing.JOptionPane.showMessageDialog(this, 
-                    "Por favor ingrese un valor numérico válido", 
+                    "Por favor ingrese un valor numérico entero válido (en ms)", 
                     "Error de formato", 
                     javax.swing.JOptionPane.ERROR_MESSAGE);
             }
         } else {
             // Manejar caso de campo vacío
-            System.err.println("Error: Campo de texto vacío");
             javax.swing.JOptionPane.showMessageDialog(this, 
                 "Por favor ingrese un valor", 
                 "Campo vacío", 
@@ -522,20 +527,27 @@ public class Laboratorio1 extends javax.swing.JFrame {
         // Validar que no esté vacío
         if (!valorIngresado.isEmpty()) {
             try {
-                // Validar que sea un número válido y positivo
-                double valor = Double.parseDouble(valorIngresado);
+                // Validar que sea un número entero válido y positivo
+                int valor = Integer.parseInt(valorIngresado);
                 
                 if (valor > 0) {
                     // Actualizar la etiqueta que muestra el tiempo de muestreo actual
-                    TiempoMuestreoActualDigital.setText(valorIngresado);
+                    TiempoMuestreoActualDigital.setText(valorIngresado + " ms");
                     
                     // Limpiar el campo de texto después de actualizar
                     ValorMuestreoDigital.setText("");
                     
-                    System.out.println("Tiempo de muestreo digital actualizado a: " + valorIngresado);
+                    // Enviar comando al microcontrolador (CMD 0x03: Set Ts DIP)
+                    SerialProtocolRunner r = sharedRunner;
+                    System.out.println("CMD Set Ts DIP: " + valor + " ms");
+                    if (r != null && r.isTransmissionActive()) {
+                        SerialProtocolRunner.commandSetTsDip(r, valor);
+                        System.out.println("  Estado: Comando enviado al microcontrolador");
+                    } else {
+                        System.out.println("  Estado: Sin conexion - comando no enviado");
+                    }
                 } else {
                     // Manejar error si el valor no es positivo
-                    System.err.println("Error: El valor debe ser mayor que cero");
                     javax.swing.JOptionPane.showMessageDialog(this, 
                         "El tiempo de muestreo debe ser un valor positivo (mayor que 0)", 
                         "Valor inválido", 
@@ -543,15 +555,13 @@ public class Laboratorio1 extends javax.swing.JFrame {
                 }
             } catch (NumberFormatException e) {
                 // Manejar error si el valor no es un número válido
-                System.err.println("Error: El valor ingresado no es un número válido");
                 javax.swing.JOptionPane.showMessageDialog(this, 
-                    "Por favor ingrese un valor numérico válido", 
+                    "Por favor ingrese un valor numérico entero válido (en ms)", 
                     "Error de formato", 
                     javax.swing.JOptionPane.ERROR_MESSAGE);
             }
         } else {
             // Manejar caso de campo vacío
-            System.err.println("Error: Campo de texto vacío");
             javax.swing.JOptionPane.showMessageDialog(this, 
                 "Por favor ingrese un valor", 
                 "Campo vacío", 

@@ -2,6 +2,8 @@ package com.myproject.laboratorio1;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.plot.XYPlot;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import javax.swing.JPanel;
@@ -76,6 +78,44 @@ public class LineGraph {
      */
     public void addDato(double x, double y) {
         series.add(x, y);
+    }
+    
+    /**
+     * Establece un rango fijo para el eje Y.
+     * 
+     * @param min Valor mínimo del eje Y.
+     * @param max Valor máximo del eje Y.
+     */
+    public void setFixedYRange(double min, double max) {
+        XYPlot plot = chart.getXYPlot();
+        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+        rangeAxis.setRange(min, max);
+        rangeAxis.setAutoRange(false);
+    }
+    
+    /**
+     * Configura el eje Y para mostrar solo valores binarios (0 y 1).
+     */
+    public void setBinaryYAxis() {
+        XYPlot plot = chart.getXYPlot();
+        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+        rangeAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+        rangeAxis.setRange(-0.1, 1.2);
+        rangeAxis.setAutoRange(false);
+        // Forzar que solo muestre 0 y 1
+        rangeAxis.setTickUnit(new org.jfree.chart.axis.NumberTickUnit(1.0));
+    }
+    
+    /**
+     * Configura las etiquetas de los ejes.
+     * 
+     * @param xLabel Etiqueta del eje X.
+     * @param yLabel Etiqueta del eje Y.
+     */
+    public void setAxisLabels(String xLabel, String yLabel) {
+        XYPlot plot = chart.getXYPlot();
+        plot.getDomainAxis().setLabel(xLabel);
+        plot.getRangeAxis().setLabel(yLabel);
     }
 
     public XYSeries getSeriexy(){

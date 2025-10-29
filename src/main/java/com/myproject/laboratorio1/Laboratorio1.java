@@ -6,6 +6,7 @@ package com.myproject.laboratorio1;
 
 import java.awt.BorderLayout;
 import java.util.Arrays;
+import javax.swing.Timer;
 
 import org.jfree.data.xy.XYSeries;
 
@@ -406,6 +407,13 @@ public class Laboratorio1 extends javax.swing.JFrame {
         enviarEstadoLEDs();
     }
 
+    private Timer timerGraficaAnalogica;
+    private Timer timerGraficaDigital;
+    private double tiempoGraficaAnalogica = 0.0;
+    private double tiempoGraficaDigital = 0.0;
+    private int currentAnalogSignalIndex = 0;
+    private int currentDigitalSignalIndex = 0;
+
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
         // Iniciar transmisión del protocolo en el puerto seleccionado
         String port = (comboPuertos != null) ? (String) comboPuertos.getSelectedItem() : null;
@@ -433,8 +441,54 @@ public class Laboratorio1 extends javax.swing.JFrame {
             }, "Protocol-StartWait").start();
         }
 
-        graficaAnalogica.iniciarGraficacion("1", 50); // cada 100 ms
-        graficaDigital.iniciarGraficacion("2", 50); // cada 100 ms
+        // Limpiar datos previos
+        graficaAnalogica.clearData();
+        graficaDigital.clearData();
+        
+        // Detener timers previos si existen
+        if (timerGraficaAnalogica != null && timerGraficaAnalogica.isRunning()) {
+            timerGraficaAnalogica.stop();
+        }
+        if (timerGraficaDigital != null && timerGraficaDigital.isRunning()) {
+            timerGraficaDigital.stop();
+        }
+        
+        // Reiniciar tiempo
+        tiempoGraficaAnalogica = 0.0;
+        tiempoGraficaDigital = 0.0;
+        
+        // Obtener el índice de la señal analógica seleccionada (0-7)
+        currentAnalogSignalIndex = jComboBox1.getSelectedIndex();
+        currentDigitalSignalIndex = jComboBox2.getSelectedIndex();
+        
+        // Timer para graficar datos analógicos reales desde el microcontrolador
+        timerGraficaAnalogica = new Timer(50, e -> {
+            if (sharedRunner != null && sharedRunner.isTransmissionActive()) {
+                SerialProtocolRunner.TimedValue adcData = sharedRunner.getAdcValue(currentAnalogSignalIndex);
+                if (adcData.tMs >= 0) {
+                    // Normalizar el valor ADC (0-1023) a voltaje (0-5V)
+                    double voltaje = (adcData.value / 1023.0) * 5.0;
+                    graficaAnalogica.addDato(tiempoGraficaAnalogica, voltaje);
+                    tiempoGraficaAnalogica += 0.05; // 50ms = 0.05s
+                }
+            }
+        });
+        
+        // Timer para graficar datos digitales reales desde el microcontrolador
+        timerGraficaDigital = new Timer(50, e -> {
+            if (sharedRunner != null && sharedRunner.isTransmissionActive()) {
+                SerialProtocolRunner.TimedValue digitalData = sharedRunner.getDigitalPins();
+                if (digitalData.tMs >= 0) {
+                    // Extraer el bit correspondiente (bits 0-3 son los DIPs)
+                    int bitValue = (digitalData.value >> currentDigitalSignalIndex) & 0x01;
+                    graficaDigital.addDato(tiempoGraficaDigital, bitValue);
+                    tiempoGraficaDigital += 0.05; // 50ms = 0.05s
+                }
+            }
+        });
+        
+        timerGraficaAnalogica.start();
+        timerGraficaDigital.start();
     }//GEN-LAST:event_jButton1ActionPerformed
 
     private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed
@@ -446,6 +500,9 @@ public class Laboratorio1 extends javax.swing.JFrame {
         
         // Cambiar el título de la gráfica analógica
         graficaAnalogica.setTitle(nombreSenal);
+        
+        // Actualizar el índice de la señal actual para la graficación en tiempo real
+        currentAnalogSignalIndex = jComboBox1.getSelectedIndex();
         
         System.out.println("Señal analógica seleccionada: " + nombreSenal);
     }//GEN-LAST:event_jComboBox1ActionPerformed
@@ -467,6 +524,9 @@ public class Laboratorio1 extends javax.swing.JFrame {
         
         // Cambiar el título de la gráfica digital
         graficaDigital.setTitle(nombreSenal);
+        
+        // Actualizar el índice de la señal actual para la graficación en tiempo real
+        currentDigitalSignalIndex = jComboBox2.getSelectedIndex();
         
         System.out.println("Señal digital seleccionada: " + nombreSenal);
     }//GEN-LAST:event_jComboBox2ActionPerformed

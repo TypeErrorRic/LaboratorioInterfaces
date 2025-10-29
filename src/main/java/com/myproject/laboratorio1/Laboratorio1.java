@@ -479,8 +479,11 @@ public class Laboratorio1 extends javax.swing.JFrame {
             if (sharedRunner != null && sharedRunner.isTransmissionActive()) {
                 SerialProtocolRunner.TimedValue digitalData = sharedRunner.getDigitalPins();
                 if (digitalData.tMs >= 0) {
-                    // Extraer el bit correspondiente (bits 0-3 son los DIPs)
-                    int bitValue = (digitalData.value >> currentDigitalSignalIndex) & 0x01;
+                    // El byte digital tiene: nibble alto (bits 7-4) = DIP, nibble bajo (bits 3-0) = LEDs
+                    // Extraer el nibble alto (DIP switches) desplazando 4 bits a la derecha
+                    int dipMask = (digitalData.value >> 4) & 0x0F;
+                    // Extraer el bit correspondiente al DIP seleccionado (0-3)
+                    int bitValue = (dipMask >> currentDigitalSignalIndex) & 0x01;
                     graficaDigital.addDato(tiempoGraficaDigital, bitValue);
                     tiempoGraficaDigital += 0.05; // 50ms = 0.05s
                 }

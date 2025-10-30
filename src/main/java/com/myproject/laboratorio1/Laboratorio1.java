@@ -912,7 +912,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
         });
     }
 
-    // Variables declaration - do not modify                     
+    // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton BotonCambiarMuestreoAnalogico;
     private javax.swing.JButton BotonCambiarMuestroDigital;
     private javax.swing.JLabel EtiquetaValorMuestreoAnalogico;
@@ -944,4 +944,5 @@ public class Laboratorio1 extends javax.swing.JFrame {
     private javax.swing.JPanel panelSuperior;
     private javax.swing.JLabel titulo;
     private javax.swing.JButton btnGuardar;
+    // End of variables declaration//GEN-END:variables
 }

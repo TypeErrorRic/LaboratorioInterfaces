@@ -75,7 +75,7 @@ public class LoginFrame extends javax.swing.JFrame {
         gbc.insets = new Insets(6, 10, 6, 10);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        JLabel titulo = new JLabel("Inicio de Sesión");
+        JLabel titulo = new JLabel("Inicio de Sesion");
         titulo.setFont(titulo.getFont().deriveFont(Font.BOLD, 16f));
         titulo.setHorizontalAlignment(JLabel.CENTER);
         gbc.gridx = 0;

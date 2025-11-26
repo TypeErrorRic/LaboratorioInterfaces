@@ -69,6 +69,7 @@ public class SerialProtocolRunner {
         this.baud = baud;
         // Auto-arranca reintentos de conexión sin bloquear UI
         startTransmissionWithRetryAsync(500);
+        persistence.startTsWatcher(this, 1500);
     }
 
     // Abre el puerto si no está abierto
@@ -567,12 +568,10 @@ public class SerialProtocolRunner {
      */
     /**
      * Envía comando 0x03 para configurar el periodo de muestreo DIP.
-     * Consulta primero el valor deseado en la API; si no hay, usa el parámetro.
+     * Usa el valor pasado (los cambios de BD se aplican vía watcher en PersistenceBridge).
      */
     public synchronized void commandSetTsDip(int ts) {
-        Integer desired = null;
-        try { desired = persistence.getDesiredTsDip(); } catch (Exception ignored) {}
-        int v = Math.max(0, Math.min(0xFFFF, (desired != null) ? desired : ts));
+        int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
         byte hi = (byte) ((v >>> 8) & 0xFF);
         boolean ok = false;
@@ -616,10 +615,11 @@ public class SerialProtocolRunner {
      */
     public synchronized void commandSetTsAdc(int ts) {
         Integer desired = null;
-        try { desired = persistence.getDesiredTsAdc(); } catch (Exception ignored) {}
-        int v = Math.max(0, Math.min(0xFFFF, (desired != null) ? desired : ts));
+        // Observación: el watcher en PersistenceBridge dispara cambios; aquí solo usamos el valor recibido.
+        int v = Math.max(0, Math.min(0xFFFF, ts));
         byte lo = (byte) (v & 0xFF);
         byte hi = (byte) ((v >>> 8) & 0xFF);
+        System.out.println("CMD Set Ts ADC -> valor(ms): " + v);
         boolean ok = false;
         if (reading && serial != null) {
             try {
@@ -631,6 +631,7 @@ public class SerialProtocolRunner {
         }
         if (!ok) {
             synchronized (PENDING_LOCK) { pendingTsAdc = v; }
+            System.out.println("CMD Set Ts ADC encolado para reintento: " + v + " ms");
             if (reading && serial != null) ensureCommandRetryWorker();
         }
     }

@@ -374,42 +374,30 @@ public class Laboratorio1 extends javax.swing.JFrame {
     }
 
     /**
-     * Envía el estado actual de los 4 LEDs al microcontrolador.
-     * Construye una máscara de 4 bits basada en el estado de los toggle buttons
-     * y envía el comando 0x01 (Set LED mask) al microcontrolador.
+     * Envía el estado del LED pulsado a la BD (int_proceso_refs para int_proceso_id=3).
      */
     private boolean enviarEstadoLEDs(javax.swing.JToggleButton source) {
-        // Construir máscara de 4 bits basada en el estado de los 4 toggle buttons
-        // Bit 0 = LED0 (D8) = jToggleButton1
-        // Bit 1 = LED1 (D9) = jToggleButton2
-        // Bit 2 = LED2 (D10) = jToggleButton3
-        // Bit 3 = LED3 (D11) = jToggleButton4
-        int mask = 0;
-        if (jToggleButton1.isSelected()) mask |= 0b0001;  // LED0 (D8)
-        if (jToggleButton2.isSelected()) mask |= 0b0010;  // LED1 (D9)
-        if (jToggleButton3.isSelected()) mask |= 0b0100;  // LED2 (D10)
-        if (jToggleButton4.isSelected()) mask |= 0b1000;  // LED3 (D11)
-        
-        // Debugging: Imprimir información del comando
-        String binaryMask = String.format("%4s", Integer.toBinaryString(mask)).replace(' ', '0');
-        System.out.println("CMD Set LED Mask: 0x" + String.format("%02X", mask) + " (0b" + binaryMask + ")");
-        System.out.println(
-            "LEDs: [LED0=" + ((mask & 0b0001) != 0 ? "ON" : "OFF") + " LED1=" + ((mask & 0b0010) != 0 ? "ON" : "OFF") + 
-            " LED2=" + ((mask & 0b0100) != 0 ? "ON" : "OFF") + " LED3=" + ((mask & 0b1000) != 0 ? "ON" : "OFF") + "]");
-        
-        // Enviar comando al microcontrolador
-        boolean enviado = dao.enviarMascaraLeds(mask);
-        if (enviado) {
-            System.out.println("  Estado: Comando enviado");
-        } else {
-            System.out.println("  Estado: Sin conexion - comando no enviado");
+        int led = botonToLed(source);
+        int valor = source.isSelected() ? 1 : 0;
+        System.out.println("Actualizando LED " + led + " a " + valor + " en BD");
+        boolean actualizado = dao.enviarMascaraLeds(led, valor);
+        if (!actualizado) {
+            System.out.println("  Estado: no se pudo actualizar en BD");
             boolean prevSelected = !source.isSelected(); // revertir al estado previo al click
             flashError(source, () -> {
                 source.setSelected(prevSelected);
                 actualizarToggle(source);
             });
         }
-        return enviado;
+        return actualizado;
+    }
+
+    private int botonToLed(javax.swing.JToggleButton b) {
+        if (b == jToggleButton1) return 1;
+        if (b == jToggleButton2) return 2;
+        if (b == jToggleButton3) return 3;
+        if (b == jToggleButton4) return 4;
+        return -1;
     }
 
 
@@ -607,7 +595,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                             graficaAnalogica.addDato(tMs / 1000.0, voltaje);  // Convertir ms a s
                             long dt = (lastAdcPlottedTimestamp > 0L) ? (tMs - lastAdcPlottedTimestamp) : 0L;
                             lastAdcPlottedTimestamp = tMs;
-                            System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) ", currentAnalogSignalIndex + 1, adcValue, tMs, dt));
+                            // System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) ", currentAnalogSignalIndex + 1, adcValue, tMs, dt));
                             continue;
                         }
                         
@@ -627,7 +615,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                             
                             long dt = (lastAdcPlottedTimestamp > 0L) ? (tMs - lastAdcPlottedTimestamp) : 0L;
                             lastAdcPlottedTimestamp = tMs;
-                            System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) ", currentAnalogSignalIndex + 1, adcValue, tMs, dt));
+                            // System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) ", currentAnalogSignalIndex + 1, adcValue, tMs, dt));
                             
                             // Calcular próximo tiempo objetivo
                             nextAdcPlotTime = tMs + tsAdcConfigured;
@@ -646,7 +634,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                                 
                                 long dt = (lastAdcPlottedTimestamp > 0L) ? (nextAdcPlotTime - lastAdcPlottedTimestamp) : 0L;
                                 lastAdcPlottedTimestamp = nextAdcPlotTime;
-                                System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) [interpolado]", currentAnalogSignalIndex + 1, interpolatedValue, nextAdcPlotTime, dt));
+                                // System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) [interpolado]", currentAnalogSignalIndex + 1, interpolatedValue, nextAdcPlotTime, dt));
                                 
                                 nextAdcPlotTime += tsAdcConfigured;
                             }
@@ -682,7 +670,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                             graficaDigital.addDato(tMs / 1000.0, bitValue);  // Convertir ms a s
                             long dt = (lastDigitalPlottedTimestamp > 0L) ? (tMs - lastDigitalPlottedTimestamp) : 0L;
                             lastDigitalPlottedTimestamp = tMs;
-                            System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) ", currentDigitalSignalIndex + 1, bitValue, tMs, dt));
+                            // System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) ", currentDigitalSignalIndex + 1, bitValue, tMs, dt));
                             continue;
                         }
                         
@@ -701,7 +689,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                             
                             long dt = (lastDigitalPlottedTimestamp > 0L) ? (tMs - lastDigitalPlottedTimestamp) : 0L;
                             lastDigitalPlottedTimestamp = tMs;
-                            System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) ", currentDigitalSignalIndex + 1, bitValue, tMs, dt));
+                            // System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) ", currentDigitalSignalIndex + 1, bitValue, tMs, dt));
                             
                             // Calcular próximo tiempo objetivo
                             nextDigitalPlotTime = tMs + tsDipConfigured;
@@ -714,7 +702,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                                 
                                 long dt = (lastDigitalPlottedTimestamp > 0L) ? (nextDigitalPlotTime - lastDigitalPlottedTimestamp) : 0L;
                                 lastDigitalPlottedTimestamp = nextDigitalPlotTime;
-                                System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) [hold]", currentDigitalSignalIndex + 1, lastDigitalValue, nextDigitalPlotTime, dt));
+                                // System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) [hold]", currentDigitalSignalIndex + 1, lastDigitalValue, nextDigitalPlotTime, dt));
                                 
                                 nextDigitalPlotTime += tsDipConfigured;
                             }
@@ -797,7 +785,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
                     boolean enviado = dao.actualizarTsAdc(valor);
                     System.out.println("CMD Set Ts ADC: " + valor + " ms");
                     if (enviado) {
-                        System.out.println("  Estado: Comando enviado al microcontrolador");
+                        System.out.println("  Estado: Comando enviado.");
                     } else {
                         System.out.println("  Estado: Sin conexion - comando no enviado");
                         flashError(BotonCambiarMuestreoAnalogico, null);

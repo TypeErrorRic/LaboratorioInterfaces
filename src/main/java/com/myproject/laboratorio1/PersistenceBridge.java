@@ -21,11 +21,17 @@ public final class PersistenceBridge {
 
     private static final PersistenceBridge INSTANCE = new PersistenceBridge();
 
+    private final DAO dao;
+    private volatile boolean tsWatcherRunning;
+    private Thread tsWatcherThread;
+    private volatile Integer lastPolledTsAdc = null;
+    private volatile Integer lastPolledTsDip = null;
     private final Object procesoVarsDataDAO;
     private final Object procesoDAO;
     private final Object procesoRefsDataDAO;
 
     private PersistenceBridge() {
+        this.dao = new DAO();
         this.procesoVarsDataDAO = newInstanceSafe("ProcesoVarsDataDAO");
         this.procesoDAO = newInstanceSafe("ProcesoDAO");
         this.procesoRefsDataDAO = newInstanceSafe("ProcesoRefsDataDAO");
@@ -68,14 +74,40 @@ public final class PersistenceBridge {
      * @return Valor en ms (0..65535) o {@code null} si no está disponible.
      */
     public Integer getDesiredTsAdc() {
-        if (procesoDAO == null) return null;
-        try {
-            Integer v;
-            v = (Integer) invokeGetter(procesoDAO, "getTsAdc"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getTsADC"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getPeriodoAdc"); if (v != null) return clamp16(v);
-        } catch (Throwable ignored) {}
-        return null;
+        Integer dbTs = dao.consultarTsAdcProceso3();
+        if (dbTs != null) return clamp16(dbTs);
+        return clamp16(50);// valor por defecto en ms
+    }
+
+    public synchronized void startTsWatcher(SerialProtocolRunner runner, long periodMs) {
+        if (runner == null) return;
+        if (tsWatcherRunning && tsWatcherThread != null) return; // ya iniciado
+        long sleep = (periodMs <= 0) ? 1000L : periodMs;
+        tsWatcherRunning = true;
+        tsWatcherThread = new Thread(() -> {
+            while (tsWatcherRunning) {
+                try {
+                    Integer adc = getDesiredTsAdc();
+                    Integer prevAdc = lastPolledTsAdc;
+                    if (adc != null && (prevAdc == null || prevAdc.intValue() != adc.intValue())) {
+                        lastPolledTsAdc = adc;
+                        System.out.println("Watcher Ts ADC detectó cambio: " + adc + " ms (antes: " + prevAdc + ")");
+                        SerialProtocolRunner.commandSetTsAdc(runner, adc);
+                    }
+
+                    Integer dip = getDesiredTsDip();
+                    Integer prevDip = lastPolledTsDip;
+                    if (dip != null && (prevDip == null || prevDip.intValue() != dip.intValue())) {
+                        lastPolledTsDip = dip;
+                        System.out.println("Watcher Ts DIP detectó cambio: " + dip + " ms (antes: " + prevDip + ")");
+                        SerialProtocolRunner.commandSetTsDip(runner, dip);
+                    }
+                } catch (Exception ignored) {}
+                try { Thread.sleep(sleep); } catch (InterruptedException ie) { break; }
+            }
+        }, "TsWatcher");
+        tsWatcherThread.setDaemon(true);
+        tsWatcherThread.start();
     }
 
     /**
@@ -84,13 +116,9 @@ public final class PersistenceBridge {
      * @return Valor en ms (0..65535) o {@code null} si no está disponible.
      */
     public Integer getDesiredTsDip() {
-        if (procesoDAO == null) return null;
-        try {
-            Integer v;
-            v = (Integer) invokeGetter(procesoDAO, "getTsDip"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getPeriodoDip"); if (v != null) return clamp16(v);
-        } catch (Throwable ignored) {}
-        return null;
+        Integer dbTs = dao.consultarTsDipProceso3();
+        if (dbTs != null) return clamp16(dbTs);
+        return clamp16(50);
     }
 
     /**
@@ -188,3 +216,4 @@ public final class PersistenceBridge {
         return x;
     }
 }
+

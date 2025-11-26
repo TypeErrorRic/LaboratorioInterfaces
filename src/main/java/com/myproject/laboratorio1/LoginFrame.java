@@ -35,6 +35,7 @@ public class LoginFrame extends javax.swing.JFrame {
     private JPasswordField passwordField;
     private JLabel estadoLabel;
     private JLabel logoLabel;
+    private JButton ingresarButton;
     private static final String LOGO_PATH = "com/imagenes/soloelojo.png"; // logo en src/main/java/com/imagenes
 
     public LoginFrame(DAO dao, Runnable onLoginSuccess) {
@@ -103,7 +104,7 @@ public class LoginFrame extends javax.swing.JFrame {
         gbc.gridx = 1;
         panel.add(passwordField, gbc);
 
-        JButton ingresarButton = new JButton("Ingresar");
+        ingresarButton = new JButton("Ingresar");
         ingresarButton.setBackground(primario);
         ingresarButton.setForeground(Color.WHITE);
         ingresarButton.setFocusPainted(false);
@@ -127,22 +128,41 @@ public class LoginFrame extends javax.swing.JFrame {
     }
 
     private void intentarIngresar() {
-        String usuario = usuarioField.getText();
-        char[] password = passwordField.getPassword();
+        final String usuario = usuarioField.getText();
+        final char[] password = passwordField.getPassword();
 
-        if (dao.validarUsuario(usuario, password)) {
-            estadoLabel.setForeground(new Color(0, 128, 0));
-            estadoLabel.setText("Acceso concedido");
-            dispose();
-            if (onLoginSuccess != null) {
-                SwingUtilities.invokeLater(onLoginSuccess);
-            }
-        } else {
-            estadoLabel.setForeground(new Color(200, 0, 0));
-            estadoLabel.setText("Credenciales invalidas");
+        setUiEnabled(false);
+        estadoLabel.setForeground(new Color(90, 99, 110));
+        estadoLabel.setText("Validando...");
+
+        Thread worker = new Thread(() -> {
+            boolean ok = dao.validarUsuario(usuario, password);
+            SwingUtilities.invokeLater(() -> {
+                if (ok) {
+                    estadoLabel.setForeground(new Color(0, 128, 0));
+                    estadoLabel.setText("Acceso concedido");
+                    dispose();
+                    if (onLoginSuccess != null) {
+                        SwingUtilities.invokeLater(onLoginSuccess);
+                    }
+                } else {
+                    estadoLabel.setForeground(new Color(200, 0, 0));
+                    estadoLabel.setText("Credenciales invalidas");
+                }
+                passwordField.setText("");
+                setUiEnabled(true);
+            });
+        }, "login-worker");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void setUiEnabled(boolean enabled) {
+        usuarioField.setEnabled(enabled);
+        passwordField.setEnabled(enabled);
+        if (ingresarButton != null) {
+            ingresarButton.setEnabled(enabled);
         }
-
-        passwordField.setText("");
     }
 
     private void cargarLogo(String ruta, int anchoMax, int altoMax) {

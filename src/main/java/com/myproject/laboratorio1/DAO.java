@@ -1,12 +1,19 @@
 package com.myproject.laboratorio1;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * @brief DAO simple para credenciales y operaciones de IO con el origen actual.
  *
  * Responsable de:
- *  - Validar usuario/clave en memoria.
+ *  - Validar usuario/clave contra la tabla int_usuarios.
  *  - Entregar muestras analogicas/digitales como pares {valor, tMs}.
  *  - Enviar periodos de muestreo (ADC/DIP) y mascara de LEDs.
  *
@@ -16,24 +23,61 @@ import java.util.Arrays;
 public class DAO {
 
     private volatile SerialProtocolRunner runner;
+    private static final Logger LOG = Logger.getLogger(DAO.class.getName());
 
-    private static final String DEFAULT_USER = "admin";
-    private static final String DEFAULT_PASSWORD = "1234";
+    private static final String DEFAULT_DB_URL = "jdbc:mysql://localhost/laboratorio_virtual";
+    private static final String DEFAULT_DB_USER = "arley";
+    private static final String DEFAULT_DB_PASSWORD = "qwerty";
 
     /**
-     * @brief Valida credenciales basicas.
+     * @brief Valida credenciales contra la tabla int_usuarios de la BD configurada.
      * @param usuario nombre de usuario.
      * @param password arreglo de caracteres con la contrasena.
-     * @return true si coincide con los valores por defecto.
+     * @return true si el usuario existe y la clave coincide; false en otro caso.
      */
     public boolean validarUsuario(String usuario, char[] password) {
         if (usuario == null || password == null) {
             return false;
         }
 
-        boolean valido = DEFAULT_USER.equals(usuario.trim()) && DEFAULT_PASSWORD.equals(new String(password));
+        String userInput = usuario.trim();
+        String passwordInput = new String(password);
         Arrays.fill(password, '\0'); // Limpiar referencia en memoria
-        return valido;
+
+        if (userInput.isEmpty()) {
+            return false;
+        }
+
+        String url = resolveConfig("LAB_DB_URL", "laboratorio.db.url", DEFAULT_DB_URL);
+        String dbUser = resolveConfig("LAB_DB_USER", "laboratorio.db.user", DEFAULT_DB_USER);
+        String dbPassword = resolveConfig("LAB_DB_PASSWORD", "laboratorio.db.password", DEFAULT_DB_PASSWORD);
+
+        String sql = "SELECT clave FROM int_usuarios WHERE email = ? OR nombres = ?";
+        LOG.log(Level.FINE, "Validando usuario [{0}] contra BD {1} con user {2}", new Object[]{userInput, url, dbUser});
+        System.out.println("Intentando validar usuario '" + userInput + "' contra BD " + url + " con usuario " + dbUser);
+        try (Connection conn = DriverManager.getConnection(url, dbUser, dbPassword);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            LOG.log(Level.INFO, "Conexion a la BD abierta ({0})", url);
+            System.out.println("Conexion a la BD abierta (" + url + ")");
+            ps.setString(1, userInput);
+            ps.setString(2, userInput);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    String stored = rs.getString("clave");
+                    boolean ok = stored != null && stored.equals(passwordInput);
+                    LOG.log(Level.INFO, "Usuario [{0}] {1}", new Object[]{userInput, ok ? "autenticado" : "clave incorrecta"});
+                    System.out.println("Usuario '" + userInput + "' " + (ok ? "autenticado" : "clave incorrecta"));
+                    return ok;
+                }
+            }
+            LOG.log(Level.INFO, "Usuario [{0}] no encontrado en tabla int_usuarios", userInput);
+            System.out.println("Usuario '" + userInput + "' no encontrado en tabla int_usuarios");
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Error al validar usuario en BD", e);
+            System.out.println("Error al validar usuario en BD: " + e.getMessage());
+        }
+
+        return false;
     }
 
     /**
@@ -45,7 +89,7 @@ public class DAO {
     }
 
     /**
-     * @brief Indica si existe una fuente activa y conectada (Conexión con la base de Datos en este Caso).
+     * @brief Indica si existe una fuente activa y conectada (Conexion con la base de Datos en este Caso).
      * @return true si hay runner y transmision activa; false en otro caso.
      */
     public boolean hayFuenteActiva() {
@@ -120,5 +164,19 @@ public class DAO {
             return true;
         }
         return false;
+    }
+
+    /** Obtiene configuracion de BD desde variable de entorno, propiedad del sistema o un valor por defecto. */
+    private static String resolveConfig(String envKey, String sysPropKey, String defaultValue) {
+        String v = System.getenv(envKey);
+        if (v != null && !v.isBlank()) {
+            return v.trim();
+        }
+        v = System.getProperty(sysPropKey);
+        if (v != null && !v.isBlank()) {
+            return v.trim();
+        }
+        LOG.log(Level.FINE, "Usando valor por defecto para {0}", sysPropKey);
+        return defaultValue;
     }
 }

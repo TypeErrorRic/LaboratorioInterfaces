@@ -9,12 +9,21 @@ import java.util.List;
 
 /**
  * Orquestador del protocolo serie de la práctica.
- *
- * Administra la conexión al puerto serie, el inicio/paro del streaming,
- * la lectura en segundo plano de las tramas 0x7A 0x7B ... 0x7C y
- * expone utilidades para enviar comandos (LED mask, Ts DIP, Ts ADC).
- *
- * El estilo de documentación sigue el usado en {@link SerialIO} para Doxygen/Javadoc.
+ * <p>
+ * Administra la conexión al puerto serie, el inicio/paro del streaming, la
+ * lectura en segundo plano de las tramas {@code 0x7A 0x7B ... 0x7C} y expone
+ * utilidades para enviar comandos (LED mask, Ts DIP, Ts ADC).
+ * </p>
+ * <p>
+ * Integración de persistencia: sin modificar la lógica serial ni el flujo,
+ * se inserta el acceso a datos usando la API (DAO) existente mediante el
+ * {@link PersistenceBridge}:
+ * </p>
+ * <ul>
+ *   <li>Al recibir una trama, se persiste la muestra (8 ADC + 4 digitales).</li>
+ *   <li>Antes de enviar comandos de configuración, se consultan tiempos de
+ *       muestreo y salidas digitales desde los DAOs.</li>
+ * </ul>
  */
 public class SerialProtocolRunner {
     // Registro global por puerto para evitar instancias simultáneas que se pisen
@@ -33,6 +42,8 @@ public class SerialProtocolRunner {
     // Reintentos de comandos (ACK) en segundo plano
     private volatile boolean commandRetryRunning;
     private Thread commandRetryThread;
+    // Puente opcional a persistencia
+    private final PersistenceBridge persistence = PersistenceBridge.get();
 
     // Buffers FIFO separados (capacidad fija con recorte)
     private static final int BUFFER_CAPACITY = 512;
@@ -286,6 +297,13 @@ public class SerialProtocolRunner {
     }
 
     // Bucle lector: acumula, extrae tramas 7A 7B ... 7C y actualiza estados
+    /**
+     * Bucle de lectura de frames desde el puerto serie.
+     * <p>
+     * Extrae tramas válidas, actualiza los buffers de ADC y digitales y
+     * persiste la muestra vía {@link PersistenceBridge} si la API está disponible.
+     * </p>
+     */
     private void readLoop() {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         while (reading) {
@@ -313,6 +331,8 @@ public class SerialProtocolRunner {
                                     if (digitalBuffer.size() >= BUFFER_CAPACITY) digitalBuffer.clear();
                                     digitalBuffer.addLast(new DigitalSample(tMs, parsed.digital));
                                 }
+                                // Persistir muestra usando API/DAO si está disponible
+                                try { persistence.persistSample(tMs, parsed.adc, parsed.digital); } catch (Exception ignored) {}
                             }
                         }
                         // Mantener solo bytes después de la última trama completa
@@ -357,6 +377,10 @@ public class SerialProtocolRunner {
         return -1;
     }
 
+    /**
+     * Busca todas las tramas completas en un buffer de bytes.
+     * Requiere encabezado 0x7A 0x7B y cola 0x7C con longitud fija 20.
+     */
     private static List<byte[]> findFrames(byte[] buf) {
         List<byte[]> frames = new ArrayList<>();
         if (buf == null || buf.length == 0) return frames;
@@ -384,6 +408,11 @@ public class SerialProtocolRunner {
         return frames;
     }
 
+    /**
+     * Parsea una trama de 20 bytes en estructura con digitales y 8 ADC.
+     * @param frame arreglo de 20 bytes con formato 7A 7B [digital] [adc0 lo hi] ... 7C
+     * @return Frame con datos o null si inválida.
+     */
     private static Frame parseFrame(byte[] frame) {
         // Validación estricta de trama: longitud y encabezados; verifica tail si está presente
         if (frame == null || frame.length != 20) return null;
@@ -400,6 +429,11 @@ public class SerialProtocolRunner {
     }
 
     // Valida respuesta con encabezado 55 AB ... CHK (XOR de [status,cmd,len]+payload)
+    /**
+     * Valida una respuesta/ACK con encabezado 55 AB y checksum XOR.
+     * @param resp bytes recibidos
+     * @return true si el checksum coincide; false en otro caso.
+     */
     private static boolean validateResponse(byte[] resp) {
         if (resp == null) {
             System.out.println("validateResponse: resp=null");
@@ -477,8 +511,14 @@ public class SerialProtocolRunner {
      *
      * @param mask Máscara de 8 bits (0..255).
      */
+    /**
+     * Envía comando 0x01 para establecer la máscara de LEDs.
+     * Consulta primero la máscara deseada en la API; si no hay, usa el parámetro.
+     */
     public synchronized void commandSetLedMask(int mask) {
-        int m = mask & 0xFF;
+        Integer desired = null;
+        try { desired = persistence.getDesiredLedMask(); } catch (Exception ignored) {}
+        int m = ((desired != null) ? desired : (mask & 0xFF));
         boolean ok = false;
         if (reading && serial != null) {
             try {
@@ -525,8 +565,14 @@ public class SerialProtocolRunner {
      *
      * @param ts Periodo en ms (uint16, 0..65535).
      */
+    /**
+     * Envía comando 0x03 para configurar el periodo de muestreo DIP.
+     * Consulta primero el valor deseado en la API; si no hay, usa el parámetro.
+     */
     public synchronized void commandSetTsDip(int ts) {
-        int v = Math.max(0, Math.min(0xFFFF, ts));
+        Integer desired = null;
+        try { desired = persistence.getDesiredTsDip(); } catch (Exception ignored) {}
+        int v = Math.max(0, Math.min(0xFFFF, (desired != null) ? desired : ts));
         byte lo = (byte) (v & 0xFF);
         byte hi = (byte) ((v >>> 8) & 0xFF);
         boolean ok = false;
@@ -564,8 +610,14 @@ public class SerialProtocolRunner {
      *
      * @param ts Periodo en ms (uint16, 0..65535).
      */
+    /**
+     * Envía comando 0x08 para configurar el periodo de muestreo ADC.
+     * Consulta primero el valor deseado en la API; si no hay, usa el parámetro.
+     */
     public synchronized void commandSetTsAdc(int ts) {
-        int v = Math.max(0, Math.min(0xFFFF, ts));
+        Integer desired = null;
+        try { desired = persistence.getDesiredTsAdc(); } catch (Exception ignored) {}
+        int v = Math.max(0, Math.min(0xFFFF, (desired != null) ? desired : ts));
         byte lo = (byte) (v & 0xFF);
         byte hi = (byte) ((v >>> 8) & 0xFF);
         boolean ok = false;

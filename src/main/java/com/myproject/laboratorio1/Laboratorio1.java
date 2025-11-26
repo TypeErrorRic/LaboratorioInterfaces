@@ -575,140 +575,109 @@ public class Laboratorio1 extends javax.swing.JFrame {
         System.out.println("Desconectado del puerto");
     }
     
-    private void iniciarTimers() {
-        // Timer para graficar datos analógicos reales desde el microcontrolador
+        private void iniciarTimers() {
+        // Timer para graficar datos analogicos desde BD
         timerGraficaAnalogica = new Timer(200, e -> {
-            if (dao.hayFuenteActiva()) {
-                while(true)
-                {
-                    long[] adcData = dao.obtenerMuestraAnalogica(currentAnalogSignalIndex); // [valor, tMs]
-                    long tMs = adcData[1];
-                    if (tMs >= 0) {
-                        int adcValue = (int) adcData[0];
-                        // Actualizar último valor recibido
-                        lastAdcValue = adcValue;
-                        lastAdcReceivedTimestamp = tMs;
-                        
-                        // Si no hay periodo configurado, graficar todos los datos
-                        if (tsAdcConfigured <= 0) {
-                            double voltaje = (adcValue / 1023.0) * 5.0;
-                            graficaAnalogica.addDato(tMs / 1000.0, voltaje);  // Convertir ms a s
-                            long dt = (lastAdcPlottedTimestamp > 0L) ? (tMs - lastAdcPlottedTimestamp) : 0L;
-                            lastAdcPlottedTimestamp = tMs;
-                            // System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) ", currentAnalogSignalIndex + 1, adcValue, tMs, dt));
-                            continue;
-                        }
-                        
-                        // Inicializar próximo tiempo objetivo si es necesario
-                        if (nextAdcPlotTime == 0) {
-                            nextAdcPlotTime = tMs;
-                        }
-                        
-                        // Verificar si debemos graficar en este momento
-                        // Tolerancia: ±10% del periodo configurado
-                        long tolerance = (long)(tsAdcConfigured * 0.1);
-                        long timeDiff = Math.abs(tMs - nextAdcPlotTime);
-                        
-                        if (timeDiff <= tolerance || tMs >= nextAdcPlotTime) {
-                            double voltaje = (adcValue / 1023.0) * 5.0;
-                            graficaAnalogica.addDato(tMs / 1000.0, voltaje);  // Convertir ms a s
-                            
-                            long dt = (lastAdcPlottedTimestamp > 0L) ? (tMs - lastAdcPlottedTimestamp) : 0L;
-                            lastAdcPlottedTimestamp = tMs;
-                            // System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) ", currentAnalogSignalIndex + 1, adcValue, tMs, dt));
-                            
-                            // Calcular próximo tiempo objetivo
-                            nextAdcPlotTime = tMs + tsAdcConfigured;
-                        }
-                        // Si el periodo configurado es menor que el periodo real (sobremuestreo necesario)
-                        else if (lastAdcValue != null && nextAdcPlotTime < tMs) {
-                            // Interpolar valores entre el último dato y el actual
-                            while (nextAdcPlotTime < tMs) {
-                                // Interpolación lineal
-                                double alpha = (double)(nextAdcPlotTime - lastAdcReceivedTimestamp) / 
-                                              (double)(tMs - lastAdcReceivedTimestamp);
-                                int interpolatedValue = (int)(lastAdcValue + alpha * (adcValue - lastAdcValue));
-                                double voltaje = (interpolatedValue / 1023.0) * 5.0;
-                                
-                                graficaAnalogica.addDato(nextAdcPlotTime / 1000.0, voltaje);  // Convertir ms a s
-                                
-                                long dt = (lastAdcPlottedTimestamp > 0L) ? (nextAdcPlotTime - lastAdcPlottedTimestamp) : 0L;
-                                lastAdcPlottedTimestamp = nextAdcPlotTime;
-                                // System.out.println(String.format("AN%d=%d(t=%dms dT=%dms) [interpolado]", currentAnalogSignalIndex + 1, interpolatedValue, nextAdcPlotTime, dt));
-                                
-                                nextAdcPlotTime += tsAdcConfigured;
-                            }
-                        }
-                    } else {
-                        break;
+            while(true)
+            {
+                long[] adcData = dao.obtenerMuestraAnalogica(currentAnalogSignalIndex); // [valor, tMs]
+                if (adcData == null || adcData.length < 2) {
+                    break;
+                }
+                long tMs = adcData[1];
+                int adcValue = (int) adcData[0];
+                // Actualizar ultimo valor recibido
+                lastAdcValue = adcValue;
+                lastAdcReceivedTimestamp = tMs;
+                
+                // Si no hay periodo configurado, graficar todos los datos
+                if (tsAdcConfigured <= 0) {
+                    double voltaje = (adcValue / 1023.0) * 5.0;
+                    graficaAnalogica.addDato(tMs / 1000.0, voltaje);  // Convertir ms a s
+                    long dt = (lastAdcPlottedTimestamp > 0L) ? (tMs - lastAdcPlottedTimestamp) : 0L;
+                    lastAdcPlottedTimestamp = tMs;
+                    continue;
+                }
+                
+                // Inicializar proximo tiempo objetivo si es necesario
+                if (nextAdcPlotTime == 0) {
+                    nextAdcPlotTime = tMs;
+                }
+                
+                // Verificar si debemos graficar en este momento (tolerancia del 10%)
+                long tolerance = (long)(tsAdcConfigured * 0.1);
+                long timeDiff = Math.abs(tMs - nextAdcPlotTime);
+                
+                if (timeDiff <= tolerance || tMs >= nextAdcPlotTime) {
+                    double voltaje = (adcValue / 1023.0) * 5.0;
+                    graficaAnalogica.addDato(tMs / 1000.0, voltaje);  // Convertir ms a s
+                    long dt = (lastAdcPlottedTimestamp > 0L) ? (tMs - lastAdcPlottedTimestamp) : 0L;
+                    lastAdcPlottedTimestamp = tMs;
+                    nextAdcPlotTime = tMs + tsAdcConfigured;
+                }
+                // Si el periodo configurado es menor que el periodo real (sobremuestreo necesario)
+                else if (lastAdcValue != null && nextAdcPlotTime < tMs) {
+                    // Interpolar valores entre el ultimo dato y el actual
+                    while (nextAdcPlotTime < tMs) {
+                        double alpha = (double)(nextAdcPlotTime - lastAdcReceivedTimestamp) /
+                                      (double)(tMs - lastAdcReceivedTimestamp);
+                        int interpolatedValue = (int)(lastAdcValue + alpha * (adcValue - lastAdcValue));
+                        double voltaje = (interpolatedValue / 1023.0) * 5.0;
+                        graficaAnalogica.addDato(nextAdcPlotTime / 1000.0, voltaje);  // Convertir ms a s
+                        long dt = (lastAdcPlottedTimestamp > 0L) ? (nextAdcPlotTime - lastAdcPlottedTimestamp) : 0L;
+                        lastAdcPlottedTimestamp = nextAdcPlotTime;
+                        nextAdcPlotTime += tsAdcConfigured;
                     }
                 }
             }
         });
         
-        // Timer para graficar datos digitales reales desde el microcontrolador
+        // Timer para graficar datos digitales desde BD
         timerGraficaDigital = new Timer(200, e -> {
-            if (dao.hayFuenteActiva()) {
-                while(true)
-                {
-                    long[] digitalData = dao.obtenerMuestraDigital(); // [valor, tMs]
-                    long tMs = digitalData[1];
-                    if (tMs >= 0) {
-                        int digitalValue = (int) digitalData[0];
-                        // El byte digital tiene: nibble alto (bits 7-4) = DIP, nibble bajo (bits 3-0) = LEDs
-                        // Extraer el nibble alto (DIP switches) desplazando 4 bits a la derecha
-                        int dipMask = (digitalValue >> 4) & 0x0F;
-                        // Extraer el bit correspondiente al DIP seleccionado (0-3)
-                        int bitValue = (dipMask >> currentDigitalSignalIndex) & 0x01;
-                        
-                        // Actualizar último valor recibido
-                        lastDigitalValue = bitValue;
-                        lastDigitalReceivedTimestamp = tMs;
-                        
-                        // Si no hay periodo configurado, graficar todos los datos
-                        if (tsDipConfigured <= 0) {
-                            graficaDigital.addDato(tMs / 1000.0, bitValue);  // Convertir ms a s
-                            long dt = (lastDigitalPlottedTimestamp > 0L) ? (tMs - lastDigitalPlottedTimestamp) : 0L;
-                            lastDigitalPlottedTimestamp = tMs;
-                            // System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) ", currentDigitalSignalIndex + 1, bitValue, tMs, dt));
-                            continue;
-                        }
-                        
-                        // Inicializar próximo tiempo objetivo si es necesario
-                        if (nextDigitalPlotTime == 0) {
-                            nextDigitalPlotTime = tMs;
-                        }
-                        
-                        // Verificar si debemos graficar en este momento
-                        // Tolerancia: ±10% del periodo configurado
-                        long tolerance = (long)(tsDipConfigured * 0.1);
-                        long timeDiff = Math.abs(tMs - nextDigitalPlotTime);
-                        
-                        if (timeDiff <= tolerance || tMs >= nextDigitalPlotTime) {
-                            graficaDigital.addDato(tMs / 1000.0, bitValue);  // Convertir ms a s
-                            
-                            long dt = (lastDigitalPlottedTimestamp > 0L) ? (tMs - lastDigitalPlottedTimestamp) : 0L;
-                            lastDigitalPlottedTimestamp = tMs;
-                            // System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) ", currentDigitalSignalIndex + 1, bitValue, tMs, dt));
-                            
-                            // Calcular próximo tiempo objetivo
-                            nextDigitalPlotTime = tMs + tsDipConfigured;
-                        }
-                        // Si el periodo configurado es menor que el periodo real (sobremuestreo necesario)
-                        else if (lastDigitalValue != null && nextDigitalPlotTime < tMs) {
-                            // Para señales digitales, mantener el último valor (hold)
-                            while (nextDigitalPlotTime < tMs) {
-                                graficaDigital.addDato(nextDigitalPlotTime / 1000.0, lastDigitalValue);  // Convertir ms a s
-                                
-                                long dt = (lastDigitalPlottedTimestamp > 0L) ? (nextDigitalPlotTime - lastDigitalPlottedTimestamp) : 0L;
-                                lastDigitalPlottedTimestamp = nextDigitalPlotTime;
-                                // System.out.println(String.format("DIP%d=%d(t=%dms dT=%dms) [hold]", currentDigitalSignalIndex + 1, lastDigitalValue, nextDigitalPlotTime, dt));
-                                
-                                nextDigitalPlotTime += tsDipConfigured;
-                            }
-                        }
-                    } else {
-                        break;
+            while(true)
+            {
+                long[] digitalData = dao.obtenerMuestraDigital(currentDigitalSignalIndex); // [valor, tMs]
+                if (digitalData == null || digitalData.length < 2) {
+                    break;
+                }
+                long tMs = digitalData[1];
+                int bitValue = (int) digitalData[0];
+                
+                // Actualizar ultimo valor recibido
+                lastDigitalValue = bitValue;
+                lastDigitalReceivedTimestamp = tMs;
+                
+                // Si no hay periodo configurado, graficar todos los datos
+                if (tsDipConfigured <= 0) {
+                    graficaDigital.addDato(tMs / 1000.0, bitValue);  // Convertir ms a s
+                    long dt = (lastDigitalPlottedTimestamp > 0L) ? (tMs - lastDigitalPlottedTimestamp) : 0L;
+                    lastDigitalPlottedTimestamp = tMs;
+                    continue;
+                }
+                
+                // Inicializar proximo tiempo objetivo si es necesario
+                if (nextDigitalPlotTime == 0) {
+                    nextDigitalPlotTime = tMs;
+                }
+                
+                // Verificar si debemos graficar en este momento (tolerancia del 10%)
+                long tolerance = (long)(tsDipConfigured * 0.1);
+                long timeDiff = Math.abs(tMs - nextDigitalPlotTime);
+                
+                if (timeDiff <= tolerance || tMs >= nextDigitalPlotTime) {
+                    graficaDigital.addDato(tMs / 1000.0, bitValue);  // Convertir ms a s
+                    long dt = (lastDigitalPlottedTimestamp > 0L) ? (tMs - lastDigitalPlottedTimestamp) : 0L;
+                    lastDigitalPlottedTimestamp = tMs;
+                    nextDigitalPlotTime = tMs + tsDipConfigured;
+                }
+                // Si el periodo configurado es menor que el periodo real (sobremuestreo necesario)
+                else if (lastDigitalValue != null && nextDigitalPlotTime < tMs) {
+                    // Para senales digitales, mantener el ultimo valor (hold)
+                    while (nextDigitalPlotTime < tMs) {
+                        graficaDigital.addDato(nextDigitalPlotTime / 1000.0, lastDigitalValue);  // Convertir ms a s
+                        long dt = (lastDigitalPlottedTimestamp > 0L) ? (nextDigitalPlotTime - lastDigitalPlottedTimestamp) : 0L;
+                        lastDigitalPlottedTimestamp = nextDigitalPlotTime;
+                        nextDigitalPlotTime += tsDipConfigured;
                     }
                 }
             }
@@ -717,8 +686,7 @@ public class Laboratorio1 extends javax.swing.JFrame {
         timerGraficaAnalogica.start();
         timerGraficaDigital.start();
     }
-
-    private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed
+private void jComboBox1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jComboBox1ActionPerformed
         // Obtener la selección del ComboBox1 (señales analógicas)
         String seleccion = (String) jComboBox1.getSelectedItem();
         graficaAnalogica.clearData();

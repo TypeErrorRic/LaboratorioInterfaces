@@ -10,15 +10,16 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * @brief DAO simple para credenciales y operaciones de IO con el origen actual.
+ * @class DAO
+ * @brief Puerta de acceso a la capa de datos del laboratorio.
  *
  * Responsable de:
  *  - Validar usuario/clave contra la tabla int_usuarios.
  *  - Entregar muestras analogicas/digitales como pares {valor, tMs}.
  *  - Enviar periodos de muestreo (ADC/DIP) y mascara de LEDs.
  *
- * Nota: el origen actual es un SerialProtocolRunner; en el futuro
- * puede reemplazarse por BD o servicio manteniendo esta interfaz.
+ * El origen actual es un SerialProtocolRunner; en el futuro puede reemplazarse
+ * por BD o servicio manteniendo esta interfaz.
  */
 public class DAO {
 
@@ -28,7 +29,19 @@ public class DAO {
     private static final String DEFAULT_DB_URL = "jdbc:mysql://localhost/laboratorio_virtual";
     private static final String DEFAULT_DB_USER = "arley";
     private static final String DEFAULT_DB_PASSWORD = "qwerty";
+    private static final int[] ADC_VAR_IDS = {10, 11, 12, 13, 14, 15, 16, 17};
+    private static final int[] DIGITAL_VAR_IDS = {18, 19, 20, 21};
     private volatile long lastRefsDataId = -1L;
+    private final long[] lastAnalogDataIds = new long[ADC_VAR_IDS.length];
+    private final long[] lastDigitalDataIds = new long[DIGITAL_VAR_IDS.length];
+
+    /**
+     * @brief Construye el DAO inicializando caches de ids.
+     */
+    public DAO() {
+        Arrays.fill(lastAnalogDataIds, -1L);
+        Arrays.fill(lastDigitalDataIds, -1L);
+    }
 
     /**
      * @brief Valida credenciales contra la tabla int_usuarios de la BD configurada.
@@ -82,7 +95,7 @@ public class DAO {
     }
 
     /**
-     * @brief Define la fuente activa de datos/comandos, para tener centralizado la instancia de SerialProtocolRunner
+     * @brief Define la fuente activa de datos/comandos para SerialProtocolRunner.
      * @param runner instancia de SerialProtocolRunner.
      */
     public void setRunner(SerialProtocolRunner runner) {
@@ -90,7 +103,7 @@ public class DAO {
     }
 
     /**
-     * @brief Indica si existe una fuente activa y conectada (Conexion con la base de Datos en este Caso).
+     * @brief Indica si existe una fuente activa y conectada.
      * @return true si hay runner y transmision activa; false en otro caso.
      */
     public boolean hayFuenteActiva() {
@@ -99,37 +112,81 @@ public class DAO {
     }
 
     /**
-     * @brief Obtiene una muestra analogica.
+     * @brief Obtiene la ultima muestra analogica disponible para un canal.
      * @param canal indice de canal ADC.
-     * @return arreglo {valor, tMs}; si no hay runner activo devuelve {0, -1}.
+     * @return arreglo {valor, tMs}; null si no hay datos nuevos o el canal es invalido.
      */
-    public long[] obtenerMuestraAnalogica(int canal) {
-        SerialProtocolRunner r = runner;
-        if (r == null || !r.isTransmissionActive()) {
-            return new long[]{0L, -1L};
+    public synchronized long[] obtenerMuestraAnalogica(int canal) {
+        if (canal < 0 || canal >= ADC_VAR_IDS.length) {
+            return null;
         }
-        SerialProtocolRunner.TimedValue tv = r.getAdcValue(canal);
-        return new long[]{tv.value, tv.tMs};
+        String url = resolveConfig("LAB_DB_URL", "laboratorio.db.url", DEFAULT_DB_URL);
+        String dbUser = resolveConfig("LAB_DB_USER", "laboratorio.db.user", DEFAULT_DB_USER);
+        String dbPassword = resolveConfig("LAB_DB_PASSWORD", "laboratorio.db.password", DEFAULT_DB_PASSWORD);
+
+        String sql = "SELECT id, valor, tiempo FROM int_proceso_vars_data WHERE int_proceso_vars_id = ? ORDER BY id DESC LIMIT 1";
+        try (Connection conn = DriverManager.getConnection(url, dbUser, dbPassword);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, ADC_VAR_IDS[canal]);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                long rowId = rs.getLong("id");
+                if (rowId == lastAnalogDataIds[canal]) {
+                    return null; // sin cambios
+                }
+                lastAnalogDataIds[canal] = rowId;
+                long valor = Math.round(rs.getDouble("valor"));
+                long tMs = Math.round(rs.getDouble("tiempo"));
+                return new long[]{valor, tMs};
+            }
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Error al consultar int_proceso_vars_data (ADC)", e);
+            return null;
+        }
     }
 
     /**
-     * @brief Obtiene una muestra digital.
-     * @return arreglo {valor, tMs}; si no hay runner activo devuelve {0, -1}.
+     * @brief Obtiene la ultima muestra digital disponible para un canal.
+     * @param canal indice de canal digital.
+     * @return arreglo {valor, tMs}; null si no hay datos nuevos o el canal es invalido.
      */
-    public long[] obtenerMuestraDigital() {
-        SerialProtocolRunner r = runner;
-        if (r == null || !r.isTransmissionActive()) {
-            return new long[]{0L, -1L};
+    public synchronized long[] obtenerMuestraDigital(int canal) {
+        if (canal < 0 || canal >= DIGITAL_VAR_IDS.length) {
+            return null;
         }
-        SerialProtocolRunner.TimedValue tv = r.getDigitalPins();
-        return new long[]{tv.value, tv.tMs};
+        String url = resolveConfig("LAB_DB_URL", "laboratorio.db.url", DEFAULT_DB_URL);
+        String dbUser = resolveConfig("LAB_DB_USER", "laboratorio.db.user", DEFAULT_DB_USER);
+        String dbPassword = resolveConfig("LAB_DB_PASSWORD", "laboratorio.db.password", DEFAULT_DB_PASSWORD);
+
+        String sql = "SELECT id, valor, tiempo FROM int_proceso_vars_data WHERE int_proceso_vars_id = ? ORDER BY id DESC LIMIT 1";
+        try (Connection conn = DriverManager.getConnection(url, dbUser, dbPassword);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, DIGITAL_VAR_IDS[canal]);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                long rowId = rs.getLong("id");
+                if (rowId == lastDigitalDataIds[canal]) {
+                    return null; // sin cambios
+                }
+                lastDigitalDataIds[canal] = rowId;
+                long valor = Math.round(rs.getDouble("valor"));
+                long tMs = Math.round(rs.getDouble("tiempo"));
+                return new long[]{valor, tMs};
+            }
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Error al consultar int_proceso_vars_data (DIG)", e);
+            return null;
+        }
     }
 
     /**
-     * Persiste una muestra completa (8 analógicas + 4 digitales) en int_proceso_vars_data.
-     *
-     * @param adc8 valores ADC (longitud mínima 8).
-     * @param dig4 valores digitales (longitud mínima 4, bits 0/1).
+     * @brief Persiste una muestra completa (8 analogicas + 4 digitales) en int_proceso_vars_data.
+     * @param adc8 valores ADC (longitud minima 8).
+     * @param dig4 valores digitales (longitud minima 4, bits 0/1).
      * @param tMs  tiempo relativo de la muestra en milisegundos.
      * @return true si se insertaron todas las filas, false en caso de error o datos insuficientes.
      */
@@ -139,8 +196,8 @@ public class DAO {
             return false;
         }
 
-        final int[] adcIds = {10, 11, 12, 13, 14, 15, 16, 17}; // int_proceso_vars_id para ADC0..ADC7 (proceso id=3)
-        final int[] digIds = {18, 19, 20, 21};                 // int_proceso_vars_id para DIN0..DIN3 (proceso id=3)
+        final int[] adcIds = ADC_VAR_IDS; // int_proceso_vars_id para ADC0..ADC7 (proceso id=3)
+        final int[] digIds = DIGITAL_VAR_IDS;                 // int_proceso_vars_id para DIN0..DIN3 (proceso id=3)
 
         String url = resolveConfig("LAB_DB_URL", "laboratorio.db.url", DEFAULT_DB_URL);
         String dbUser = resolveConfig("LAB_DB_USER", "laboratorio.db.user", DEFAULT_DB_USER);
@@ -174,7 +231,7 @@ public class DAO {
     }
 
     /**
-     * @brief Actualiza el periodo de muestreo ADC en BD (int_process.id=3, columna tiempo_muestreo).
+     * @brief Actualiza el periodo de muestreo ADC en BD (int_proceso.id=3, columna tiempo_muestreo).
      * @param tsMs periodo en milisegundos.
      * @return true si se actualizo al menos una fila en BD.
      */
@@ -183,7 +240,7 @@ public class DAO {
     }
 
     /**
-     * @brief Actualiza el periodo de muestreo digital en BD (int_process.id=3, columna tiempo_muestreo_2).
+     * @brief Actualiza el periodo de muestreo digital en BD (int_proceso.id=3, columna tiempo_muestreo_2).
      * @param tsMs periodo en milisegundos.
      * @return true si se actualizo al menos una fila en BD.
      */
@@ -228,8 +285,10 @@ public class DAO {
     }
 
     /**
+     * @brief Consulta la ultima mascara de LEDs registrada.
+     *
      * Revisa si hay una nueva fila en int_proceso_refs_data y devuelve el LED y valor asociados.
-     * Usa el int_proceso_refs_id para mapear al LED (restando 3). Si no hay fila nueva retorna null.
+     * Usa el int_proceso_refs_id para mapear al LED (restando 3).
      *
      * @return arreglo {led (1..4), valor (0/1)} o null si no hay cambios.
      */
@@ -267,7 +326,7 @@ public class DAO {
     }
 
     /**
-     * Consulta el valor de tiempo_muestreo para int_proceso.id = 3.
+     * @brief Consulta el valor de tiempo_muestreo para int_proceso.id = 3.
      * @return valor en ms o null si no se pudo obtener.
      */
     public Integer consultarTsAdcProceso3() {
@@ -275,13 +334,18 @@ public class DAO {
     }
 
     /**
-     * Consulta el valor de tiempo_muestreo_2 para int_proceso.id = 3.
+     * @brief Consulta el valor de tiempo_muestreo_2 para int_proceso.id = 3.
      * @return valor en ms o null si no se pudo obtener.
      */
     public Integer consultarTsDipProceso3() {
         return consultarTsProceso3("tiempo_muestreo_2");
     }
 
+    /**
+     * @brief Consulta el periodo de muestreo para el proceso 3.
+     * @param column nombre de columna permitido (tiempo_muestreo o tiempo_muestreo_2).
+     * @return valor en ms o null si no se pudo obtener.
+     */
     private Integer consultarTsProceso3(String column) {
         if (!"tiempo_muestreo".equals(column) && !"tiempo_muestreo_2".equals(column)) {
             LOG.log(Level.WARNING, "Columna no permitida para consulta: {0}", column);
@@ -306,7 +370,13 @@ public class DAO {
         return null;
     }
 
-    /** Obtiene configuracion de BD desde variable de entorno, propiedad del sistema o un valor por defecto. */
+    /**
+     * @brief Obtiene configuracion de BD desde variable de entorno, propiedad del sistema o un valor por defecto.
+     * @param envKey nombre de la variable de entorno.
+     * @param sysPropKey clave de propiedad del sistema.
+     * @param defaultValue valor por defecto si no se encuentra configuracion.
+     * @return cadena con la configuracion resuelta.
+     */
     private static String resolveConfig(String envKey, String sysPropKey, String defaultValue) {
         String v = System.getenv(envKey);
         if (v != null && !v.isBlank()) {
@@ -321,7 +391,7 @@ public class DAO {
     }
 
     /**
-     * Actualiza el periodo de muestreo en la tabla int_process (id=3).
+     * @brief Actualiza el periodo de muestreo en la tabla int_proceso (id=3).
      * @param columnName nombre de la columna a actualizar.
      * @param tsMs valor en milisegundos.
      * @return true si se actualizo al menos una fila.

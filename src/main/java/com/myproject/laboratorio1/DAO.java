@@ -28,6 +28,7 @@ public class DAO {
     private static final String DEFAULT_DB_URL = "jdbc:mysql://localhost/laboratorio_virtual";
     private static final String DEFAULT_DB_USER = "arley";
     private static final String DEFAULT_DB_PASSWORD = "qwerty";
+    private volatile long lastRefsDataId = -1L;
 
     /**
      * @brief Valida credenciales contra la tabla int_usuarios de la BD configurada.
@@ -179,6 +180,45 @@ public class DAO {
     }
 
     /**
+     * Revisa si hay una nueva fila en int_proceso_refs_data y devuelve el LED y valor asociados.
+     * Usa el int_proceso_refs_id para mapear al LED (restando 3). Si no hay fila nueva retorna null.
+     *
+     * @return arreglo {led (1..4), valor (0/1)} o null si no hay cambios.
+     */
+    public synchronized int[] consultarNuevaMascaraLeds() {
+        String url = resolveConfig("LAB_DB_URL", "laboratorio.db.url", DEFAULT_DB_URL);
+        String dbUser = resolveConfig("LAB_DB_USER", "laboratorio.db.user", DEFAULT_DB_USER);
+        String dbPassword = resolveConfig("LAB_DB_PASSWORD", "laboratorio.db.password", DEFAULT_DB_PASSWORD);
+
+        String sql = "SELECT id, int_proceso_refs_id, valor FROM int_proceso_refs_data ORDER BY id DESC LIMIT 1";
+        try (Connection conn = DriverManager.getConnection(url, dbUser, dbPassword);
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) {
+                return null;
+            }
+            long rowId = rs.getLong("id");
+            if (rowId == lastRefsDataId) {
+                return null; // sin cambios desde la ultima lectura
+            }
+            lastRefsDataId = rowId;
+
+            int refId = rs.getInt("int_proceso_refs_id");
+            int ledIndex = refId - 3; // DOUT0..3 estan en ids 4..7
+            if (ledIndex < 1 || ledIndex > 4) {
+                LOG.log(Level.FINE, "Fila int_proceso_refs_data ignorada (ref fuera de rango): {0}", refId);
+                return null;
+            }
+            double valor = rs.getDouble("valor");
+            int bit = (Math.abs(valor) > 0.0001) ? 1 : 0;
+            return new int[]{ledIndex, bit};
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Error al consultar int_proceso_refs_data", e);
+            return null;
+        }
+    }
+
+    /**
      * Consulta el valor de tiempo_muestreo para int_proceso.id = 3.
      * @return valor en ms o null si no se pudo obtener.
      */
@@ -236,10 +276,10 @@ public class DAO {
      * Actualiza el periodo de muestreo en la tabla int_process (id=3).
      * @param columnName nombre de la columna a actualizar.
      * @param tsMs valor en milisegundos.
-     * @return true si se actualiz�� al menos una fila.
+     * @return true si se actualizo al menos una fila.
      */
     private boolean updateProcesoTiempo(String columnName, int tsMs) {
-        // Solo permitir columnas esperadas para evitar inyecci��n accidental.
+        // Solo permitir columnas esperadas para evitar inyeccion accidental.
         if (!"tiempo_muestreo".equals(columnName) && !"tiempo_muestreo_2".equals(columnName)) {
             LOG.log(Level.WARNING, "Columna no permitida para actualizar: {0}", columnName);
             return false;

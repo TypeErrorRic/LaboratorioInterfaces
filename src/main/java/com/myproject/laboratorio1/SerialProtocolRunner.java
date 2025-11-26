@@ -514,12 +514,10 @@ public class SerialProtocolRunner {
      */
     /**
      * Envía comando 0x01 para establecer la máscara de LEDs.
-     * Consulta primero la máscara deseada en la API; si no hay, usa el parámetro.
+     * Usa el valor recibido.
      */
     public synchronized void commandSetLedMask(int mask) {
-        Integer desired = null;
-        try { desired = persistence.getDesiredLedMask(); } catch (Exception ignored) {}
-        int m = ((desired != null) ? desired : (mask & 0xFF));
+        int m = mask & 0xFF;
         boolean ok = false;
         if (reading && serial != null) {
             try {
@@ -788,23 +786,18 @@ public class SerialProtocolRunner {
             }
         } catch (Exception ignored) {}
         if (!listed) {
-            reading = false;
             return false;
         }
 
         // 2) Verificar que el puerto siga operativo
         if (serial == null) {
-            reading = false;
             return false;
         }
         try {
-            if (!serial.isAlive()) {
-                reading = false;
-            }
+            return serial.isAlive();
         } catch (Exception ignored) {
-            reading = false;
+            return false;
         }
-        return reading;
     }
     /**
      * Indica si hay un proceso de conexión con reintentos en curso.

@@ -4,16 +4,16 @@
  * Puente opcional hacia la capa de persistencia (API externa).
  * <p>
  * Esta clase integra el acceso a datos de forma desacoplada para no romper la
- * compilaciÃ³n ni modificar la lÃ³gica serial existente. Utiliza reflexiÃ³n para
- * localizar e invocar las clases de la API si estÃ¡n presentes en el classpath:
+ * compilaciÃƒÂ³n ni modificar la lÃƒÂ³gica serial existente. Utiliza reflexiÃƒÂ³n para
+ * localizar e invocar las clases de la API si estÃƒÂ¡n presentes en el classpath:
  * {@code ProcesoVarsDataDAO}, {@code ProcesoDAO} y {@code ProcesoRefsDataDAO}.
  * En caso de no encontrarlas, todas las operaciones son no-op.
  * </p>
  * <ul>
- *   <li>Al recibir datos del micro (8 analÃ³gicas + 4 digitales), se invoca
+ *   <li>Al recibir datos del micro (8 analÃƒÂ³gicas + 4 digitales), se invoca
  *       {@code ProcesoVarsDataDAO} para persistirlos.</li>
  *   <li>Antes de enviar comandos al micro, se consultan tiempos de muestreo
- *       en {@code ProcesoDAO} y la mÃ¡scara de salidas en
+ *       en {@code ProcesoDAO} y la mÃƒÂ¡scara de salidas en
  *       {@code ProcesoRefsDataDAO}.</li>
  * </ul>
  */
@@ -41,38 +41,23 @@ public final class PersistenceBridge {
     public static PersistenceBridge get() { return INSTANCE; }
 
     /**
-     * Persiste una muestra recibida (8 analÃ³gicas y 4 digitales).
-     * <p>
-     * Intenta mÃ©todos comunes en {@code ProcesoVarsDataDAO} mediante reflexiÃ³n:
-     * {@code insert}, {@code save}, {@code guardar}. Si no se encuentran, intenta
-     * una firma alternativa por campos separados.
-     * </p>
+     * Persiste una muestra recibida (8 analógicas y 4 digitales) usando DAO directo.
      *
      * @param tMs        Tiempo relativo de la muestra en milisegundos.
-     * @param adc8       Arreglo de 8 valores analÃ³gicos (uint16).
+     * @param adc8       Arreglo de 8 valores analógicos (uint16).
      * @param digitalByte Byte con el estado de pines digitales (bits 0..3 usados).
      */
     public void persistSample(long tMs, int[] adc8, int digitalByte) {
-        if (procesoVarsDataDAO == null || adc8 == null || adc8.length < 8) return;
-        try {
-            // Derivar 4 digitales de los 8 bits menos significativos
-            int[] dig4 = new int[4];
-            for (int i = 0; i < 4; i++) dig4[i] = (digitalByte >>> i) & 0x1;
-
-            // Intentar distintas firmas comunes
-            if (invokeIfExists(procesoVarsDataDAO, "insert", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
-            if (invokeIfExists(procesoVarsDataDAO, "save", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
-            if (invokeIfExists(procesoVarsDataDAO, "guardar", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
-            // Alternativas por campos separados
-            if (invokeIfExists(procesoVarsDataDAO, "insert", new Class[]{ int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, long.class },
-                    new Object[]{ adc8[0], adc8[1], adc8[2], adc8[3], adc8[4], adc8[5], adc8[6], adc8[7], dig4[0], dig4[1], dig4[2], dig4[3], tMs })) return;
-        } catch (Throwable ignored) {}
+        if (adc8 == null || adc8.length < 8) return;
+        int[] dig4 = new int[4];
+        for (int i = 0; i < 4; i++) dig4[i] = (digitalByte >>> i) & 0x1;
+        try { dao.persistVarsData(adc8, dig4, tMs); } catch (Throwable ignored) {}
     }
 
     /**
      * Obtiene el periodo de muestreo del ADC deseado desde {@code ProcesoDAO}.
      *
-     * @return Valor en ms (0..65535) o {@code null} si no estÃ¡ disponible.
+     * @return Valor en ms (0..65535) o {@code null} si no estÃƒÂ¡ disponible.
      */
     public Integer getDesiredTsAdc() {
         Integer dbTs = dao.consultarTsAdcProceso3();
@@ -92,7 +77,7 @@ public final class PersistenceBridge {
                     Integer prevAdc = lastPolledTsAdc;
                     if (adc != null && (prevAdc == null || prevAdc.intValue() != adc.intValue())) {
                         lastPolledTsAdc = adc;
-                        System.out.println("Watcher Ts ADC detectÃ³ cambio: " + adc + " ms (antes: " + prevAdc + ")");
+                        System.out.println("Watcher Ts ADC detectÃƒÂ³ cambio: " + adc + " ms (antes: " + prevAdc + ")");
                         SerialProtocolRunner.commandSetTsAdc(runner, adc);
                     }
 
@@ -100,7 +85,7 @@ public final class PersistenceBridge {
                     Integer prevDip = lastPolledTsDip;
                     if (dip != null && (prevDip == null || prevDip.intValue() != dip.intValue())) {
                         lastPolledTsDip = dip;
-                        System.out.println("Watcher Ts DIP detect�� cambio: " + dip + " ms (antes: " + prevDip + ")");
+                        System.out.println("Watcher Ts DIP detectï¿½ï¿½ cambio: " + dip + " ms (antes: " + prevDip + ")");
                         SerialProtocolRunner.commandSetTsDip(runner, dip);
                     }
                     getDesiredLedMask(runner);
@@ -114,7 +99,7 @@ public final class PersistenceBridge {
     /**
      * Obtiene el periodo de muestreo del DIP deseado desde {@code ProcesoDAO}.
      *
-     * @return Valor en ms (0..65535) o {@code null} si no estÃ¡ disponible.
+     * @return Valor en ms (0..65535) o {@code null} si no estÃƒÂ¡ disponible.
      */
     public Integer getDesiredTsDip() {
         Integer dbTs = dao.consultarTsDipProceso3();
@@ -123,13 +108,13 @@ public final class PersistenceBridge {
     }
 
     /**
-     * Obtiene la mÃ¡scara de 4 salidas digitales desde {@code ProcesoRefsDataDAO}.
+     * Obtiene la mÃƒÂ¡scara de 4 salidas digitales desde {@code ProcesoRefsDataDAO}.
      * <p>
-     * Intenta primero un getter directo de mÃ¡scara y, si no, compone la mÃ¡scara
+     * Intenta primero un getter directo de mÃƒÂ¡scara y, si no, compone la mÃƒÂ¡scara
      * a partir de un arreglo de salidas digitales (boolean/int).
      * </p>
      *
-     * @return MÃ¡scara 0..255 (bits 0..3) o {@code null} si no estÃ¡ disponible.
+     * @return MÃƒÂ¡scara 0..255 (bits 0..3) o {@code null} si no estÃƒÂ¡ disponible.
      */
     public void getDesiredLedMask(SerialProtocolRunner runner) {
         int[] change = dao.consultarNuevaMascaraLeds();
@@ -145,7 +130,7 @@ public final class PersistenceBridge {
 
     /**
      * Instancia una clase por nombre simple, probando varios paquetes comunes
-     * sin fallar la ejecuciÃ³n si no existe.
+     * sin fallar la ejecuciÃƒÂ³n si no existe.
      */
     private static Object newInstanceSafe(String simpleName) {
         try {
@@ -168,8 +153,8 @@ public final class PersistenceBridge {
     }
 
     /**
-     * Invoca un mÃ©todo si existe (por nombre y tipos), devolviendo true si se
-     * logrÃ³ ejecutar.
+     * Invoca un mÃƒÂ©todo si existe (por nombre y tipos), devolviendo true si se
+     * logrÃƒÂ³ ejecutar.
      */
     private static boolean invokeIfExists(Object target, String method, Class<?>[] types, Object[] args) throws Exception {
         try {
@@ -183,7 +168,7 @@ public final class PersistenceBridge {
     }
 
     /**
-     * Invoca un getter sin parÃ¡metros por nombre.
+     * Invoca un getter sin parÃƒÂ¡metros por nombre.
      */
     private static Object invokeGetter(Object target, String method) throws Exception {
         try {

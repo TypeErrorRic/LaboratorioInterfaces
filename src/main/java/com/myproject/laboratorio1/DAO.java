@@ -126,6 +126,54 @@ public class DAO {
     }
 
     /**
+     * Persiste una muestra completa (8 analógicas + 4 digitales) en int_proceso_vars_data.
+     *
+     * @param adc8 valores ADC (longitud mínima 8).
+     * @param dig4 valores digitales (longitud mínima 4, bits 0/1).
+     * @param tMs  tiempo relativo de la muestra en milisegundos.
+     * @return true si se insertaron todas las filas, false en caso de error o datos insuficientes.
+     */
+    public boolean persistVarsData(int[] adc8, int[] dig4, long tMs) {
+        if (adc8 == null || adc8.length < 8 || dig4 == null || dig4.length < 4) {
+            LOG.log(Level.WARNING, "Datos insuficientes para persistir muestra (adc8={0}, dig4={1})", new Object[]{adc8, dig4});
+            return false;
+        }
+
+        final int[] adcIds = {10, 11, 12, 13, 14, 15, 16, 17}; // int_proceso_vars_id para ADC0..ADC7 (proceso id=3)
+        final int[] digIds = {18, 19, 20, 21};                 // int_proceso_vars_id para DIN0..DIN3 (proceso id=3)
+
+        String url = resolveConfig("LAB_DB_URL", "laboratorio.db.url", DEFAULT_DB_URL);
+        String dbUser = resolveConfig("LAB_DB_USER", "laboratorio.db.user", DEFAULT_DB_USER);
+        String dbPassword = resolveConfig("LAB_DB_PASSWORD", "laboratorio.db.password", DEFAULT_DB_PASSWORD);
+
+        String sql = "INSERT INTO int_proceso_vars_data (int_proceso_vars_id, valor, tiempo, fecha, hora) VALUES (?, ?, ?, CURRENT_DATE, CURRENT_TIME)";
+        int tMsInt = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, tMs));
+        try (Connection conn = DriverManager.getConnection(url, dbUser, dbPassword)) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                for (int i = 0; i < 8; i++) {
+                    ps.setInt(1, adcIds[i]);
+                    ps.setInt(2, adc8[i]);
+                    ps.setInt(3, tMsInt);
+                    ps.addBatch();
+                }
+                for (int i = 0; i < 4; i++) {
+                    ps.setInt(1, digIds[i]);
+                    ps.setInt(2, dig4[i]);
+                    ps.setInt(3, tMsInt);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            conn.commit();
+            return true;
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Error al insertar muestra en int_proceso_vars_data", e);
+            return false;
+        }
+    }
+
+    /**
      * @brief Actualiza el periodo de muestreo ADC en BD (int_process.id=3, columna tiempo_muestreo).
      * @param tsMs periodo en milisegundos.
      * @return true si se actualizo al menos una fila en BD.

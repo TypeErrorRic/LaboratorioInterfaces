@@ -17,6 +17,13 @@
             <version>1.5.4</version>
         </dependency>
         <dependency>
+            <groupId>com.myproject</groupId>
+            <artifactId>dao-only</artifactId>
+            <version>1.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/src/Libs/dao-only.jar</systemPath>
+        </dependency>
+        <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>5.2.5</version>
@@ -34,7 +41,7 @@
     </dependencies>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <exec.mainClass>com.myproject.laboratorio1.Laboratorio1</exec.mainClass>
     </properties>
     <build>
@@ -45,6 +52,10 @@
                 <version>3.10.1</version>
                 <configuration>
                     <release>21</release>
+                    <excludes>
+                        <exclude>**/DAO.java</exclude>
+                        <exclude>**/SerialProtocolRunner.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
         </plugins>

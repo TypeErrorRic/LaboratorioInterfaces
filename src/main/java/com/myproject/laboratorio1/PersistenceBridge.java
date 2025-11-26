@@ -1,4 +1,4 @@
-﻿package com.myproject.laboratorio1;
+package com.myproject.laboratorio1;
 
 /**
  * Puente opcional hacia la capa de persistencia (API externa).

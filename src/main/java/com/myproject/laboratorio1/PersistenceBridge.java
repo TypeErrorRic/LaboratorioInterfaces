@@ -6,29 +6,34 @@ package com.myproject.laboratorio1;
  * Esta clase integra el acceso a datos de forma desacoplada para no romper la
  * compilación ni modificar la lógica serial existente. Utiliza reflexión para
  * localizar e invocar las clases de la API si están presentes en el classpath:
- * {@code ProcesoVarsDataDAO}, {@code ProcesoDAO} y {@code ProcesoRefsDataDAO}.
+ * {@code IntProcesoDataDAO} (para vars_data y refs_data) y {@code IntProcesoDAO}.
  * En caso de no encontrarlas, todas las operaciones son no-op.
  * </p>
  * <ul>
  *   <li>Al recibir datos del micro (8 analógicas + 4 digitales), se invoca
- *       {@code ProcesoVarsDataDAO} para persistirlos.</li>
+ *       {@code IntProcesoDataDAO} para persistirlos.</li>
  *   <li>Antes de enviar comandos al micro, se consultan tiempos de muestreo
- *       en {@code ProcesoDAO} y la máscara de salidas en
- *       {@code ProcesoRefsDataDAO}.</li>
+ *       en {@code IntProcesoDAO} y la máscara de salidas en
+ *       {@code IntProcesoDataDAO}.</li>
  * </ul>
  */
 public final class PersistenceBridge {
 
     private static final PersistenceBridge INSTANCE = new PersistenceBridge();
 
-    private final Object procesoVarsDataDAO;
+    private final Object procesoDataDAO;
     private final Object procesoDAO;
-    private final Object procesoRefsDataDAO;
 
     private PersistenceBridge() {
-        this.procesoVarsDataDAO = newInstanceSafe("ProcesoVarsDataDAO");
-        this.procesoDAO = newInstanceSafe("ProcesoDAO");
-        this.procesoRefsDataDAO = newInstanceSafe("ProcesoRefsDataDAO");
+        this.procesoDataDAO = newInstanceSafe("IntProcesoDataDAO");
+        this.procesoDAO = newInstanceSafe("IntProcesoDAO");
+        
+        // Configurar proceso activo por defecto (Arduino Uno = ID 3)
+        if (procesoDataDAO != null) {
+            try {
+                invokeIfExists(procesoDataDAO, "setProcesoActivo", new Class[]{int.class}, new Object[]{3});
+            } catch (Exception ignored) {}
+        }
     }
 
     public static PersistenceBridge get() { return INSTANCE; }
@@ -36,34 +41,41 @@ public final class PersistenceBridge {
     /**
      * Persiste una muestra recibida (8 analógicas y 4 digitales).
      * <p>
-     * Intenta métodos comunes en {@code ProcesoVarsDataDAO} mediante reflexión:
-     * {@code insert}, {@code save}, {@code guardar}. Si no se encuentran, intenta
-     * una firma alternativa por campos separados.
+     * Intenta métodos comunes en {@code IntProcesoDataDAO} mediante reflexión:
+     * {@code insertVarsData}. Si no se encuentran, intenta firmas alternativas.
+     * </p>
+     * <p>
+     * <b>Nota:</b> Los pines digitales están codificados en el nibble alto (bits 4-7)
+     * del byte digital recibido del microcontrolador. Se realiza un shift de 4 bits
+     * a la derecha para extraer DIN0-DIN3.
      * </p>
      *
      * @param tMs        Tiempo relativo de la muestra en milisegundos.
      * @param adc8       Arreglo de 8 valores analógicos (uint16).
-     * @param digitalByte Byte con el estado de pines digitales (bits 0..3 usados).
+     * @param digitalByte Byte con el estado de pines digitales (DIN0-DIN3 en bits 4-7).
      */
     public void persistSample(long tMs, int[] adc8, int digitalByte) {
-        if (procesoVarsDataDAO == null || adc8 == null || adc8.length < 8) return;
+        if (procesoDataDAO == null || adc8 == null || adc8.length < 8) return;
         try {
-            // Derivar 4 digitales de los 8 bits menos significativos
+            // Los pines digitales están en los bits 4-7 del byte (nibble alto)
+            // Hacer shift de 4 bits a la derecha para mover bits 4-7 a posiciones 0-3
+            int digitalNibble = (digitalByte >>> 4) & 0x0F;
+            
+            // Derivar 4 digitales de los bits 0-3 del nibble desplazado
             int[] dig4 = new int[4];
-            for (int i = 0; i < 4; i++) dig4[i] = (digitalByte >>> i) & 0x1;
+            for (int i = 0; i < 4; i++) dig4[i] = (digitalNibble >>> i) & 0x1;
 
-            // Intentar distintas firmas comunes
-            if (invokeIfExists(procesoVarsDataDAO, "insert", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
-            if (invokeIfExists(procesoVarsDataDAO, "save", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
-            if (invokeIfExists(procesoVarsDataDAO, "guardar", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
-            // Alternativas por campos separados
-            if (invokeIfExists(procesoVarsDataDAO, "insert", new Class[]{ int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, long.class },
-                    new Object[]{ adc8[0], adc8[1], adc8[2], adc8[3], adc8[4], adc8[5], adc8[6], adc8[7], dig4[0], dig4[1], dig4[2], dig4[3], tMs })) return;
+            // Intentar método insertVarsData de IntProcesoDataDAO
+            if (invokeIfExists(procesoDataDAO, "insertVarsData", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
+            
+            // Métodos alternativos por compatibilidad
+            if (invokeIfExists(procesoDataDAO, "insert", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
+            if (invokeIfExists(procesoDataDAO, "save", new Class[]{ long.class, int[].class, int[].class }, new Object[]{ tMs, adc8, dig4 })) return;
         } catch (Throwable ignored) {}
     }
 
     /**
-     * Obtiene el periodo de muestreo del ADC deseado desde {@code ProcesoDAO}.
+     * Obtiene el periodo de muestreo del ADC deseado desde {@code IntProcesoDAO}.
      *
      * @return Valor en ms (0..65535) o {@code null} si no está disponible.
      */
@@ -71,6 +83,8 @@ public final class PersistenceBridge {
         if (procesoDAO == null) return null;
         try {
             Integer v;
+            // Intentar getters para tiempo_muestreo (ADC)
+            v = (Integer) invokeGetter(procesoDAO, "getTiempoMuestreo"); if (v != null) return clamp16(v);
             v = (Integer) invokeGetter(procesoDAO, "getTsAdc"); if (v != null) return clamp16(v);
             v = (Integer) invokeGetter(procesoDAO, "getTsADC"); if (v != null) return clamp16(v);
             v = (Integer) invokeGetter(procesoDAO, "getPeriodoAdc"); if (v != null) return clamp16(v);
@@ -79,7 +93,7 @@ public final class PersistenceBridge {
     }
 
     /**
-     * Obtiene el periodo de muestreo del DIP deseado desde {@code ProcesoDAO}.
+     * Obtiene el periodo de muestreo del DIP deseado desde {@code IntProcesoDAO}.
      *
      * @return Valor en ms (0..65535) o {@code null} si no está disponible.
      */
@@ -87,6 +101,8 @@ public final class PersistenceBridge {
         if (procesoDAO == null) return null;
         try {
             Integer v;
+            // Intentar getters para tiempo_muestreo_2 (DIP)
+            v = (Integer) invokeGetter(procesoDAO, "getTiempoMuestreo2"); if (v != null) return clamp16(v);
             v = (Integer) invokeGetter(procesoDAO, "getTsDip"); if (v != null) return clamp16(v);
             v = (Integer) invokeGetter(procesoDAO, "getPeriodoDip"); if (v != null) return clamp16(v);
         } catch (Throwable ignored) {}
@@ -94,7 +110,7 @@ public final class PersistenceBridge {
     }
 
     /**
-     * Obtiene la máscara de 4 salidas digitales desde {@code ProcesoRefsDataDAO}.
+     * Obtiene la máscara de 4 salidas digitales desde {@code IntProcesoDataDAO}.
      * <p>
      * Intenta primero un getter directo de máscara y, si no, compone la máscara
      * a partir de un arreglo de salidas digitales (boolean/int).
@@ -103,14 +119,19 @@ public final class PersistenceBridge {
      * @return Máscara 0..255 (bits 0..3) o {@code null} si no está disponible.
      */
     public Integer getDesiredLedMask() {
-        if (procesoRefsDataDAO == null) return null;
+        if (procesoDataDAO == null) return null;
         try {
-            // Intentar máscara directa 0..255
-            Integer m = (Integer) invokeGetter(procesoRefsDataDAO, "getLedMask");
+            // Intentar máscara directa 0..255 con método getRefsDataLedMask
+            Integer m = (Integer) invokeGetter(procesoDataDAO, "getRefsDataLedMask");
             if (m != null) return m & 0xFF;
+            
+            // Métodos alternativos
+            m = (Integer) invokeGetter(procesoDataDAO, "getLedMask");
+            if (m != null) return m & 0xFF;
+            
             // Intentar arreglo/Lista de 4 booleans/ints
-            Object arr = invokeGetter(procesoRefsDataDAO, "getDigitalOutputs");
-            if (arr == null) arr = invokeGetter(procesoRefsDataDAO, "getOutputs");
+            Object arr = invokeGetter(procesoDataDAO, "getDigitalOutputs");
+            if (arr == null) arr = invokeGetter(procesoDataDAO, "getOutputs");
             if (arr != null) {
                 int mask = 0;
                 int n = java.lang.reflect.Array.getLength(arr);
@@ -144,6 +165,7 @@ public final class PersistenceBridge {
      */
     private static Class<?> tryFindClass(String simpleName) {
         try { return Class.forName(simpleName); } catch (Throwable ignored) {}
+        try { return Class.forName("com.myproject.laboratorio1.api." + simpleName); } catch (Throwable ignored) {}
         try { return Class.forName("com.api." + simpleName); } catch (Throwable ignored) {}
         try { return Class.forName("com.myproject.api." + simpleName); } catch (Throwable ignored) {}
         try { return Class.forName("com.myproject.dao." + simpleName); } catch (Throwable ignored) {}

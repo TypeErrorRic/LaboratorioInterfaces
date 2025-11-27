@@ -41,9 +41,15 @@
             <version>8.0.33</version>
         </dependency>
     </dependencies>
+    <repositories>
+        <repository>
+            <id>netbeans</id>
+            <url>https://bits.netbeans.org/maven2/</url>
+        </repository>
+    </repositories>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <exec.mainClass>com.myproject.laboratorio1.Laboratorio1</exec.mainClass>
     </properties>
     <build>

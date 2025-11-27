@@ -494,28 +494,56 @@ public class IntProcesoDataDAO {
 
     /**
      * Obtiene la máscara de LEDs actual desde la base de datos.
+     * Lee los últimos valores de DOUT0-DOUT3 del proceso activo.
      * 
      * @return Máscara de 4 bits (0-15), o null si no hay datos
      * @throws SQLException Si hay error en la operación de base de datos
      */
     public Integer getRefsDataLedMask() throws SQLException {
-        String sql = "SELECT int_proceso_refs_id, valor FROM int_proceso_refs_data " +
-                     "WHERE int_proceso_refs_id IN (4, 5, 6, 7) " +
-                     "AND id IN (SELECT MAX(id) FROM int_proceso_refs_data WHERE int_proceso_refs_id IN (4, 5, 6, 7) GROUP BY int_proceso_refs_id)";
+        // Verificar que el proceso esté configurado
+        if (currentProcesoId == 0) {
+            LOG.log(Level.WARNING, "Proceso activo no configurado para getRefsDataLedMask(). Usando proceso 3.");
+            setProcesoActivo(3);
+        }
+        
+        // Verificar que tengamos los IDs de referencias digitales
+        if (doutRefIds[0] == 0) {
+            LOG.log(Level.WARNING, "IDs de referencias digitales no configurados. Reconfigurando proceso.");
+            setProcesoActivo(currentProcesoId);
+        }
         
         int mask = 0;
         boolean foundAny = false;
         
+        // Construir SQL dinámicamente para los 4 DOUTs
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT int_proceso_refs_id, valor FROM int_proceso_refs_data WHERE int_proceso_refs_id IN (");
+        for (int i = 0; i < 4; i++) {
+            if (i > 0) sql.append(", ");
+            sql.append(doutRefIds[i]);
+        }
+        sql.append(") AND id IN (SELECT MAX(id) FROM int_proceso_refs_data WHERE int_proceso_refs_id IN (");
+        for (int i = 0; i < 4; i++) {
+            if (i > 0) sql.append(", ");
+            sql.append(doutRefIds[i]);
+        }
+        sql.append(") GROUP BY int_proceso_refs_id)");
+        
         try (Connection conn = dbConnection.getConnection();
              Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+             ResultSet rs = stmt.executeQuery(sql.toString())) {
             
             while (rs.next()) {
                 int refId = rs.getInt("int_proceso_refs_id");
-                int valor = Math.round(rs.getFloat("valor"));
-                if (refId >= 4 && refId <= 7) {
-                    mask |= (valor & 0x01) << (refId - 4);
-                    foundAny = true;
+                int valor = rs.getInt("valor");
+                
+                // Encontrar el índice (0-3) de este refId en doutRefIds
+                for (int i = 0; i < 4; i++) {
+                    if (doutRefIds[i] == refId) {
+                        mask |= (valor & 0x01) << i;
+                        foundAny = true;
+                        break;
+                    }
                 }
             }
         }
@@ -654,6 +682,142 @@ public class IntProcesoDataDAO {
             LOG.log(Level.INFO, "Eliminados {0} registros de int_proceso_refs_data", affectedRows);
             return affectedRows;
         }
+    }
+
+    // ========================================================================
+    // MÉTODOS DE LECTURA PARA GRAFICACIÓN
+    // ========================================================================
+    
+    /**
+     * Obtiene el último dato registrado para un canal analógico específico.
+     * <p>
+     * Consulta la tabla {@code int_proceso_vars_data} buscando el registro
+     * más reciente (mayor ID) para el {@code int_proceso_vars_id} correspondiente
+     * al canal ADC solicitado.
+     * </p>
+     * <p>
+     * <b>Usado por:</b> {@link Laboratorio1#iniciarTimers()} para graficación
+     * de señales analógicas desde la base de datos.
+     * </p>
+     * 
+     * @param canalAdc índice del canal ADC (0-7, según configuración del proceso)
+     * @return array de 2 elementos: [{@code valor}, {@code tiempo_ms}] si hay datos,
+     *         o [{@code 0}, {@code -1}] si no hay datos disponibles
+     * @throws SQLException si ocurre un error durante la consulta a la base de datos
+     * @see #insertVarsData(int, long)
+     * @see DAO#obtenerUltimaMuestraAnalogica(int)
+     */
+    public long[] getLatestAdcData(int canalAdc) throws SQLException {
+        if (adcVarIds == null || canalAdc < 0 || canalAdc >= adcVarIds.length) {
+            LOG.log(Level.WARNING, "IDs de ADC no inicializados o canal inválido: {0}", canalAdc);
+            return new long[]{0L, -1L};
+        }
+        
+        int varId = adcVarIds[canalAdc];
+        String sql = "SELECT valor, tiempo FROM int_proceso_vars_data " +
+                     "WHERE int_proceso_vars_id = ? " +
+                     "ORDER BY id DESC LIMIT 1";
+        
+        try (Connection conn = dbConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            
+            ps.setInt(1, varId);
+            
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    long valor = rs.getLong("valor");
+                    long tiempo = rs.getLong("tiempo");
+                    return new long[]{valor, tiempo};
+                }
+            }
+        }
+        
+        return new long[]{0L, -1L};
+    }
+    
+    /**
+     * Obtiene el último dato registrado para las entradas digitales (DIP switches).
+     * <p>
+     * Consulta los últimos valores de las 4 variables digitales (DIN0-DIN3) y
+     * construye un nibble de 4 bits donde:
+     * </p>
+     * <ul>
+     *   <li>Bit 0: DIN0 (DIP switch 0)</li>
+     *   <li>Bit 1: DIN1 (DIP switch 1)</li>
+     *   <li>Bit 2: DIN2 (DIP switch 2)</li>
+     *   <li>Bit 3: DIN3 (DIP switch 3)</li>
+     * </ul>
+     * <p>
+     * <b>Usado por:</b> {@link Laboratorio1#iniciarTimers()} para graficación
+     * de señales digitales desde la base de datos.
+     * </p>
+     * <p>
+     * <b>Nota:</b> Si no hay exactamente 4 variables digitales configuradas,
+     * retorna [{@code 0}, {@code -1}].
+     * </p>
+     * 
+     * @return array de 2 elementos: [{@code nibble_valor}, {@code tiempo_ms}] si hay datos,
+     *         o [{@code 0}, {@code -1}] si no hay datos disponibles o configuración inválida
+     * @throws SQLException si ocurre un error durante la consulta a la base de datos
+     * @see #insertVarsData(int, long)
+     * @see DAO#obtenerUltimaMuestraDigital()
+     */
+    public long[] getLatestDigitalData() throws SQLException {
+        if (dinVarIds == null || dinVarIds.length < 4) {
+            LOG.log(Level.WARNING, "IDs de DIN no inicializados correctamente");
+            return new long[]{0L, -1L};
+        }
+        
+        // Consultar los últimos valores de los 4 DIP switches
+        String sql = "SELECT int_proceso_vars_id, valor, tiempo FROM int_proceso_vars_data " +
+                     "WHERE int_proceso_vars_id IN (?, ?, ?, ?) " +
+                     "ORDER BY id DESC LIMIT 4";
+        
+        int[] valores = new int[4];
+        long tiempoMasReciente = -1L;
+        boolean hayDatos = false;
+        
+        try (Connection conn = dbConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            
+            ps.setInt(1, dinVarIds[0]);
+            ps.setInt(2, dinVarIds[1]);
+            ps.setInt(3, dinVarIds[2]);
+            ps.setInt(4, dinVarIds[3]);
+            
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int varId = rs.getInt("int_proceso_vars_id");
+                    int valor = rs.getInt("valor");
+                    long tiempo = rs.getLong("tiempo");
+                    
+                    // Encontrar el índice correspondiente
+                    for (int i = 0; i < 4; i++) {
+                        if (dinVarIds[i] == varId) {
+                            valores[i] = valor;
+                            if (tiempo > tiempoMasReciente) {
+                                tiempoMasReciente = tiempo;
+                            }
+                            hayDatos = true;
+                            break;
+                        }
+                    }
+                }
+                // Procesar resultados DENTRO del try-with-resources mientras rs está abierto
+                if (hayDatos) {
+                    // Construir nibble: bit0=DIN0, bit1=DIN1, bit2=DIN2, bit3=DIN3
+                    int nibble = 0;
+                    for (int i = 0; i < 4; i++) {
+                        if (valores[i] != 0) {
+                            nibble |= (1 << i);
+                        }
+                    }
+                    return new long[]{nibble, tiempoMasReciente};
+                }
+            }
+        }
+        
+        return new long[]{0L, -1L};
     }
 
     // ========================================================================

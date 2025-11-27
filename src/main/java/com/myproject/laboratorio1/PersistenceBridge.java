@@ -1,28 +1,92 @@
 package com.myproject.laboratorio1;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
- * Puente opcional hacia la capa de persistencia (API externa).
+ * Puente bidireccional exclusivo entre la base de datos y el microcontrolador.
  * <p>
- * Esta clase integra el acceso a datos de forma desacoplada para no romper la
- * compilación ni modificar la lógica serial existente. Utiliza reflexión para
- * localizar e invocar las clases de la API si están presentes en el classpath:
- * {@code IntProcesoDataDAO} (para vars_data y refs_data) y {@code IntProcesoDAO}.
- * En caso de no encontrarlas, todas las operaciones son no-op.
+ * <b>Patrón Singleton:</b> Esta clase implementa el patrón Singleton para garantizar
+ * una única instancia que gestiona toda la comunicación BD ↔ Micro.
  * </p>
+ * 
+ * <p><b>Arquitectura de comunicación:</b></p>
+ * <pre>
+ * ┌──────────────┐      ┌──────────────────┐      ┌──────────────┐
+ * │   Base de    │◄────►│ PersistenceBridge│◄────►│    Micro     │
+ * │    Datos     │      │   (Singleton)    │      │ controlador  │
+ * └──────────────┘      └──────────────────┘      └──────────────┘
+ *      ▲                        ▲                        ▲
+ *      │                        │                        │
+ *   DAOs API            Thread Polling          SerialProtocolRunner
+ * </pre>
+ * 
+ * <p><b>Dirección BD → Micro (Polling):</b></p>
  * <ul>
- *   <li>Al recibir datos del micro (8 analógicas + 4 digitales), se invoca
- *       {@code IntProcesoDataDAO} para persistirlos.</li>
- *   <li>Antes de enviar comandos al micro, se consultan tiempos de muestreo
- *       en {@code IntProcesoDAO} y la máscara de salidas en
- *       {@code IntProcesoDataDAO}.</li>
+ *   <li>Thread daemon ejecuta cada 500ms consultando cambios en BD</li>
+ *   <li>Detecta modificaciones en tiempo_muestreo (ADC), tiempo_muestreo_2 (DIP)
+ *       y máscara de LEDs en int_proceso_refs_data</li>
+ *   <li>Envía comandos al micro solo si hay cambios (evita tráfico innecesario)</li>
+ *   <li>Usa reflexión para invocar métodos de IntProcesoDAO e IntProcesoDataDAO</li>
  * </ul>
+ * 
+ * <p><b>Dirección Micro → BD (Persistencia):</b></p>
+ * <ul>
+ *   <li>Método {@link #persistSample(int, int[], int[])} recibe muestras del micro</li>
+ *   <li>Inserta 8 valores analógicos en int_proceso_vars_data (ADC0-ADC7)</li>
+ *   <li>Inserta 4 valores digitales en int_proceso_vars_data (DIN0-DIN3)</li>
+ *   <li>Registra timestamp en milisegundos para cada muestra</li>
+ * </ul>
+ * 
+ * <p><b>Manejo robusto de errores:</b></p>
+ * <ul>
+ *   <li>Todos los métodos de reflexión capturan InvocationTargetException</li>
+ *   <li>SQLException se registra en nivel FINE (esperadas por desconexiones)</li>
+ *   <li>El thread de polling nunca se detiene por errores de BD</li>
+ *   <li>Retorna valores por defecto (null) cuando no hay datos disponibles</li>
+ * </ul>
+ * 
+ * <p><b>Uso típico:</b></p>
+ * <pre>
+ * // Configurar SerialProtocolRunner
+ * PersistenceBridge.get().setSerialRunner(runner);
+ * 
+ * // Cambiar proceso activo
+ * PersistenceBridge.get().setProcesoActivo(3); // Arduino Uno
+ * 
+ * // El polling y persistencia son automáticos
+ * </pre>
+ * 
+ * @author Laboratorio de Interfaces
+ * @version 2.0 - Arquitectura BD-Céntrica con Polling
+ * @see SerialProtocolRunner
+ * @see DAO
+ * @see com.myproject.laboratorio1.api.IntProcesoDAO
+ * @see com.myproject.laboratorio1.api.IntProcesoDataDAO
  */
 public final class PersistenceBridge {
 
+    private static final Logger LOG = Logger.getLogger(PersistenceBridge.class.getName());
     private static final PersistenceBridge INSTANCE = new PersistenceBridge();
 
     private final Object procesoDataDAO;
     private final Object procesoDAO;
+    
+    // ID del proceso activo (por defecto Arduino Uno = 3)
+    private volatile int procesoActivoId = 3;
+    
+    // SerialProtocolRunner para comunicación con el micro
+    private volatile SerialProtocolRunner serialRunner;
+    
+    // Thread de polling para detectar cambios en BD
+    private volatile Thread pollingThread;
+    private volatile boolean pollingActive = false;
+    private static final long POLLING_INTERVAL_MS = 500; // Revisar BD cada 500ms
+    
+    // Últimos valores enviados al micro (para detectar cambios)
+    private volatile Integer lastSentTsAdc = null;
+    private volatile Integer lastSentTsDip = null;
+    private volatile Integer lastSentLedMask = null;
 
     private PersistenceBridge() {
         this.procesoDataDAO = newInstanceSafe("IntProcesoDataDAO");
@@ -32,11 +96,120 @@ public final class PersistenceBridge {
         if (procesoDataDAO != null) {
             try {
                 invokeIfExists(procesoDataDAO, "setProcesoActivo", new Class[]{int.class}, new Object[]{3});
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "No se pudo configurar proceso activo", e);
+            }
         }
     }
 
     public static PersistenceBridge get() { return INSTANCE; }
+    
+    /**
+     * Establece el ID del proceso activo.
+     * @param procesoId ID del proceso (1=Control Nivel, 2=Control Temp, 3=Arduino Uno)
+     */
+    public void setProcesoActivo(int procesoId) {
+        this.procesoActivoId = procesoId;
+        // También configurar en IntProcesoDataDAO si existe
+        if (procesoDataDAO != null) {
+            try {
+                invokeIfExists(procesoDataDAO, "setProcesoActivo", new Class[]{int.class}, new Object[]{procesoId});
+                LOG.log(Level.INFO, "Proceso activo configurado a ID: {0}", procesoId);
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "No se pudo configurar proceso activo en DAO", e);
+            }
+        }
+    }
+    
+    /**
+     * Configura el SerialProtocolRunner para comunicación con el microcontrolador.
+     * Inicia el polling automático de cambios en BD.
+     * 
+     * @param runner Instancia de SerialProtocolRunner ya conectada
+     */
+    public void setSerialRunner(SerialProtocolRunner runner) {
+        this.serialRunner = runner;
+        if (runner != null && !pollingActive) {
+            startPolling();
+        } else if (runner == null && pollingActive) {
+            stopPolling();
+        }
+    }
+    
+    /**
+     * Inicia el thread de polling que revisa BD periódicamente y envía cambios al micro.
+     */
+    private synchronized void startPolling() {
+        if (pollingActive) return;
+        
+        pollingActive = true;
+        pollingThread = new Thread(() -> {
+            LOG.info("PersistenceBridge: Polling iniciado");
+            while (pollingActive) {
+                try {
+                    pollDatabaseAndSendToMicro();
+                    Thread.sleep(POLLING_INTERVAL_MS);
+                } catch (InterruptedException e) {
+                    break;
+                } catch (Exception e) {
+                    LOG.log(Level.WARNING, "Error en polling de BD", e);
+                }
+            }
+            LOG.info("PersistenceBridge: Polling detenido");
+        }, "PersistenceBridge-Polling");
+        pollingThread.setDaemon(true);
+        pollingThread.start();
+    }
+    
+    /**
+     * Detiene el thread de polling.
+     */
+    private synchronized void stopPolling() {
+        pollingActive = false;
+        if (pollingThread != null) {
+            pollingThread.interrupt();
+            pollingThread = null;
+        }
+    }
+    
+    /**
+     * Revisa BD para detectar cambios en Ts ADC, Ts DIP y máscara LEDs,
+     * y los envía al microcontrolador si hay cambios.
+     */
+    private void pollDatabaseAndSendToMicro() {
+        SerialProtocolRunner runner = this.serialRunner;
+        if (runner == null || !runner.isTransmissionActive()) {
+            return;
+        }
+        
+        try {
+            // Revisar Ts ADC
+            Integer tsAdc = getDesiredTsAdc();
+            if (tsAdc != null && !tsAdc.equals(lastSentTsAdc)) {
+                SerialProtocolRunner.commandSetTsAdc(runner, tsAdc);
+                lastSentTsAdc = tsAdc;
+                LOG.log(Level.FINE, "Ts ADC actualizado en micro: {0} ms", tsAdc);
+            }
+            
+            // Revisar Ts DIP
+            Integer tsDip = getDesiredTsDip();
+            if (tsDip != null && !tsDip.equals(lastSentTsDip)) {
+                SerialProtocolRunner.commandSetTsDip(runner, tsDip);
+                lastSentTsDip = tsDip;
+                LOG.log(Level.FINE, "Ts DIP actualizado en micro: {0} ms", tsDip);
+            }
+            
+            // Revisar máscara LEDs
+            Integer ledMask = getDesiredLedMask();
+            if (ledMask != null && !ledMask.equals(lastSentLedMask)) {
+                SerialProtocolRunner.commandSetLedMask(runner, ledMask);
+                lastSentLedMask = ledMask;
+                LOG.log(Level.FINE, "Máscara LEDs actualizada en micro: 0x{0}", Integer.toHexString(ledMask));
+            }
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error al enviar cambios al microcontrolador", e);
+        }
+    }
 
     /**
      * Persiste una muestra recibida (8 analógicas y 4 digitales).
@@ -83,12 +256,18 @@ public final class PersistenceBridge {
         if (procesoDAO == null) return null;
         try {
             Integer v;
-            // Intentar getters para tiempo_muestreo (ADC)
-            v = (Integer) invokeGetter(procesoDAO, "getTiempoMuestreo"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getTsAdc"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getTsADC"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getPeriodoAdc"); if (v != null) return clamp16(v);
-        } catch (Throwable ignored) {}
+            // Intentar getters para tiempo_muestreo (ADC) con ID de proceso
+            v = (Integer) invokeIfExistsWithReturn(procesoDAO, "getTiempoMuestreo", new Class[]{int.class}, new Object[]{procesoActivoId});
+            if (v != null) return clamp16(v);
+            
+            // Métodos alternativos sin ID
+            v = (Integer) invokeGetter(procesoDAO, "getTsAdc"); 
+            if (v != null) return clamp16(v);
+            v = (Integer) invokeGetter(procesoDAO, "getTsADC"); 
+            if (v != null) return clamp16(v);
+        } catch (Throwable e) {
+            LOG.log(Level.FINE, "Error al obtener Ts ADC desde BD", e);
+        }
         return null;
     }
 
@@ -101,50 +280,38 @@ public final class PersistenceBridge {
         if (procesoDAO == null) return null;
         try {
             Integer v;
-            // Intentar getters para tiempo_muestreo_2 (DIP)
-            v = (Integer) invokeGetter(procesoDAO, "getTiempoMuestreo2"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getTsDip"); if (v != null) return clamp16(v);
-            v = (Integer) invokeGetter(procesoDAO, "getPeriodoDip"); if (v != null) return clamp16(v);
-        } catch (Throwable ignored) {}
+            // Intentar getters para tiempo_muestreo_2 (DIP) con ID de proceso
+            v = (Integer) invokeIfExistsWithReturn(procesoDAO, "getTiempoMuestreo2", new Class[]{int.class}, new Object[]{procesoActivoId});
+            if (v != null) return clamp16(v);
+            
+            // Métodos alternativos sin ID
+            v = (Integer) invokeGetter(procesoDAO, "getTsDip"); 
+            if (v != null) return clamp16(v);
+        } catch (Throwable e) {
+            LOG.log(Level.FINE, "Error al obtener Ts DIP desde BD", e);
+        }
         return null;
     }
 
     /**
      * Obtiene la máscara de 4 salidas digitales desde {@code IntProcesoDataDAO}.
-     * <p>
-     * Intenta primero un getter directo de máscara y, si no, compone la máscara
-     * a partir de un arreglo de salidas digitales (boolean/int).
-     * </p>
+     * Lee el último valor guardado en int_proceso_refs_data.
      *
-     * @return Máscara 0..255 (bits 0..3) o {@code null} si no está disponible.
+     * @return Máscara 0..15 (bits 0..3) o {@code null} si no está disponible.
      */
     public Integer getDesiredLedMask() {
         if (procesoDataDAO == null) return null;
         try {
-            // Intentar máscara directa 0..255 con método getRefsDataLedMask
+            // Método principal: getRefsDataLedMask
             Integer m = (Integer) invokeGetter(procesoDataDAO, "getRefsDataLedMask");
-            if (m != null) return m & 0xFF;
+            if (m != null) return m & 0x0F;
             
             // Métodos alternativos
             m = (Integer) invokeGetter(procesoDataDAO, "getLedMask");
-            if (m != null) return m & 0xFF;
-            
-            // Intentar arreglo/Lista de 4 booleans/ints
-            Object arr = invokeGetter(procesoDataDAO, "getDigitalOutputs");
-            if (arr == null) arr = invokeGetter(procesoDataDAO, "getOutputs");
-            if (arr != null) {
-                int mask = 0;
-                int n = java.lang.reflect.Array.getLength(arr);
-                for (int i = 0; i < Math.min(4, n); i++) {
-                    Object v = java.lang.reflect.Array.get(arr, i);
-                    int bit = 0;
-                    if (v instanceof Boolean) bit = ((Boolean) v) ? 1 : 0;
-                    else if (v instanceof Number) bit = (((Number) v).intValue() != 0) ? 1 : 0;
-                    mask |= (bit & 0x1) << i;
-                }
-                return mask & 0xFF;
-            }
-        } catch (Throwable ignored) {}
+            if (m != null) return m & 0x0F;
+        } catch (Throwable e) {
+            LOG.log(Level.FINE, "Error al obtener máscara LEDs desde BD", e);
+        }
         return null;
     }
 
@@ -175,9 +342,10 @@ public final class PersistenceBridge {
 
     /**
      * Invoca un método si existe (por nombre y tipos), devolviendo true si se
-     * logró ejecutar.
+     * logró ejecutar. Maneja correctamente InvocationTargetException para evitar
+     * propagar SQLException u otras excepciones del método invocado.
      */
-    private static boolean invokeIfExists(Object target, String method, Class<?>[] types, Object[] args) throws Exception {
+    private static boolean invokeIfExists(Object target, String method, Class<?>[] types, Object[] args) {
         try {
             java.lang.reflect.Method m = target.getClass().getMethod(method, types);
             m.setAccessible(true);
@@ -185,18 +353,64 @@ public final class PersistenceBridge {
             return true;
         } catch (NoSuchMethodException e) {
             return false;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // El método fue invocado pero lanzó una excepción (probablemente SQLException)
+            Throwable cause = e.getCause();
+            if (cause instanceof java.sql.SQLException) {
+                LOG.log(Level.FINE, "SQLException al ejecutar " + method + ": " + cause.getMessage(), cause);
+            } else {
+                LOG.log(Level.WARNING, "Error al ejecutar " + method, e);
+            }
+            return false;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error de reflexión al invocar " + method, e);
+            return false;
         }
     }
 
     /**
-     * Invoca un getter sin parámetros por nombre.
+     * Invoca un método si existe y devuelve su resultado, o null si no existe o hay error.
+     * Maneja correctamente InvocationTargetException y otras excepciones.
      */
-    private static Object invokeGetter(Object target, String method) throws Exception {
+    private static Object invokeIfExistsWithReturn(Object target, String method, Class<?>[] types, Object[] args) {
+        try {
+            java.lang.reflect.Method m = target.getClass().getMethod(method, types);
+            m.setAccessible(true);
+            return m.invoke(target, args);
+        } catch (NoSuchMethodException e) {
+            return null;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // El método existe pero lanzó una excepción (ej: SQLException)
+            LOG.log(Level.FINE, "Error al invocar " + method + ": " + e.getCause(), e.getCause());
+            return null;
+        } catch (Exception e) {
+            LOG.log(Level.FINE, "Error inesperado al invocar " + method, e);
+            return null;
+        }
+    }
+
+    /**
+     * Invoca un getter sin parámetros por nombre. Maneja correctamente
+     * InvocationTargetException para evitar propagar excepciones del método invocado.
+     */
+    private static Object invokeGetter(Object target, String method) {
         try {
             java.lang.reflect.Method m = target.getClass().getMethod(method);
             m.setAccessible(true);
             return m.invoke(target);
         } catch (NoSuchMethodException e) {
+            return null;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // El método existe pero lanzó una excepción (ej: SQLException)
+            Throwable cause = e.getCause();
+            if (cause instanceof java.sql.SQLException) {
+                LOG.log(Level.FINE, "SQLException al invocar getter " + method + ": " + cause.getMessage(), cause);
+            } else {
+                LOG.log(Level.WARNING, "Error al invocar getter " + method, e);
+            }
+            return null;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error de reflexión al invocar getter " + method, e);
             return null;
         }
     }

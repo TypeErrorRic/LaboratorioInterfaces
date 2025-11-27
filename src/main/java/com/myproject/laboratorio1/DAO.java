@@ -11,20 +11,49 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * @brief DAO integrado para credenciales y operaciones de IO con persistencia en BD.
- *
- * Responsable de:
- *  - Validar usuario/clave contra la tabla int_usuarios (via IntUsuariosDAO).
- *  - Entregar muestras analogicas/digitales desde SerialProtocolRunner y persistirlas en BD.
- *  - Consultar y enviar periodos de muestreo (ADC/DIP) desde/hacia BD y microcontrolador.
- *  - Enviar mascara de LEDs al microcontrolador y sincronizar con BD.
- *
- * Integra tanto la fuente de datos en tiempo real (SerialProtocolRunner)
- * como la persistencia histórica (API de DAOs).
+ * Data Access Object para interacción exclusiva con la base de datos.
+ * <p>
+ * <b>Arquitectura BD-Céntrica:</b> Esta clase implementa el patrón DAO como capa
+ * de acceso exclusivo a la base de datos, sin ninguna interacción directa con el
+ * microcontrolador. {@link PersistenceBridge} actúa como intermediario entre BD y micro.
+ * </p>
+ * 
+ * <p><b>Responsabilidades principales:</b></p>
+ * <ul>
+ *   <li><b>Autenticación:</b> Validar credenciales contra la tabla int_usuarios
+ *       utilizando {@link com.myproject.laboratorio1.api.IntUsuariosDAO}</li>
+ *   <li><b>Lectura de datos históricos:</b> Consultar últimas muestras analógicas
+ *       y digitales desde int_proceso_vars_data para graficación</li>
+ *   <li><b>Configuración del proceso:</b> Actualizar tiempos de muestreo (Ts ADC/DIP)
+ *       y máscara de LEDs en la base de datos</li>
+ *   <li><b>Gestión de proceso activo:</b> Sincronizar el ID del proceso activo entre
+ *       DAO y PersistenceBridge</li>
+ * </ul>
+ * 
+ * <p><b>Flujo de datos:</b></p>
+ * <pre>
+ * GUI → DAO.actualizarTsAdc(500) → BD actualizada
+ *                                    ↓
+ *                    PersistenceBridge polling detecta cambio
+ *                                    ↓
+ *                           Comando enviado al micro
+ * </pre>
+ * 
+ * <p><b>DAOs utilizados:</b></p>
+ * <ul>
+ *   <li>{@link com.myproject.laboratorio1.api.IntUsuariosDAO} - Gestión de usuarios</li>
+ *   <li>{@link com.myproject.laboratorio1.api.IntProcesoDAO} - Configuración de procesos</li>
+ *   <li>{@link com.myproject.laboratorio1.api.IntProcesoDataDAO} - Datos de variables/referencias</li>
+ *   <li>{@link com.myproject.laboratorio1.api.IntProcesoDefinicionesDAO} - Definiciones de proceso</li>
+ * </ul>
+ * 
+ * @author Laboratorio de Interfaces
+ * @version 2.0 - Arquitectura BD-Céntrica
+ * @see PersistenceBridge
+ * @see com.myproject.laboratorio1.api.IntProcesoDataDAO
  */
 public class DAO {
 
-    private volatile SerialProtocolRunner runner;
     private static final Logger LOG = Logger.getLogger(DAO.class.getName());
     
     // DAOs para interacción con BD
@@ -55,13 +84,28 @@ public class DAO {
     }
     
     /**
-     * Establece el ID del proceso activo para persistencia.
-     * @param procesoId ID del proceso (ej: 1=Control Nivel, 2=Control Temp, 3=Arduino Uno)
+     * Establece el proceso activo para todas las operaciones de persistencia.
+     * <p>
+     * Este método configura el contexto de operación para la sesión actual,
+     * definiendo qué proceso (experimento) será el objetivo de todas las
+     * operaciones de lectura/escritura en la base de datos.
+     * </p>
+     * <p>
+     * <b>Sincronización automática:</b> También actualiza el proceso activo en
+     * {@link PersistenceBridge} para que el polling y persistencia automática
+     * operen en el contexto correcto.
+     * </p>
+     * 
+     * @param procesoId ID del proceso a activar (ej: 1=Control Nivel, 2=Control Temp, 3=Arduino Uno)
+     * @see com.myproject.laboratorio1.api.IntProcesoDataDAO#setProcesoActivo(int)
+     * @see PersistenceBridge#setProcesoActivo(int)
      */
     public void setProcesoActivo(int procesoId) {
         this.procesoActivoId = procesoId;
         try {
             this.procesoDataDAO.setProcesoActivo(procesoId);
+            // Sincronizar con PersistenceBridge
+            PersistenceBridge.get().setProcesoActivo(procesoId);
             LOG.log(Level.INFO, "Proceso activo configurado a ID: {0}", procesoId);
         } catch (SQLException e) {
             LOG.log(Level.SEVERE, "Error al configurar proceso activo", e);
@@ -69,10 +113,19 @@ public class DAO {
     }
 
     /**
-     * @brief Valida credenciales contra la tabla int_usuarios usando IntUsuariosDAO.
-     * @param usuario nombre de usuario (puede ser email o nombres).
-     * @param password arreglo de caracteres con la contrasena.
-     * @return true si el usuario existe y la clave coincide; false en otro caso.
+     * Valida credenciales de usuario contra la tabla int_usuarios.
+     * <p>
+     * Este método utiliza {@link com.myproject.laboratorio1.api.IntUsuariosDAO}
+     * para verificar si las credenciales proporcionadas coinciden con algún
+     * registro en la base de datos. Limpia el arreglo de contraseña de la
+     * memoria por seguridad.
+     * </p>
+     * 
+     * @param usuario nombre de usuario o email (se hace trim())
+     * @param password arreglo de caracteres con la contraseña (se limpia después)
+     * @return {@code true} si las credenciales son válidas, {@code false} en caso contrario
+     * @throws NullPointerException si usuario o password son null
+     * @see com.myproject.laboratorio1.api.IntUsuariosDAO#validarCredenciales(String, String)
      */
     public boolean validarUsuario(String usuario, char[] password) {
         if (usuario == null || password == null) {
@@ -96,149 +149,185 @@ public class DAO {
     }
 
     /**
-     * @brief Define la fuente activa de datos/comandos, para tener centralizado la instancia de SerialProtocolRunner
-     * @param runner instancia de SerialProtocolRunner.
-     */
-    public void setRunner(SerialProtocolRunner runner) {
-        this.runner = runner;
-    }
-
-    /**
-     * @brief Indica si existe una fuente activa y conectada (Conexion con la base de Datos en este Caso).
-     * @return true si hay runner y transmision activa; false en otro caso.
-     */
-    public boolean hayFuenteActiva() {
-        SerialProtocolRunner r = runner;
-        return r != null && r.isTransmissionActive();
-    }
-
-    /**
-     * @brief Obtiene una muestra analogica del runner activo.
-     * Los datos se obtienen en tiempo real del SerialProtocolRunner.
-     * La persistencia de todas las muestras se hace automáticamente en SerialProtocolRunner
-     * via PersistenceBridge.
+     * Verifica si existe conexión activa con la base de datos.
+     * <p>
+     * Intenta obtener una conexión desde {@link com.myproject.laboratorio1.api.DBConnection}
+     * para validar que el pool de conexiones está operativo.
+     * </p>
      * 
-     * @param canal indice de canal ADC (0-7).
-     * @return arreglo {valor, tMs}; si no hay runner activo devuelve {0, -1}.
+     * @return {@code true} si la conexión a BD está disponible, {@code false} en caso contrario
+     * @see com.myproject.laboratorio1.api.DBConnection#getConnection()
      */
-    public long[] obtenerMuestraAnalogica(int canal) {
-        SerialProtocolRunner r = runner;
-        if (r == null || !r.isTransmissionActive()) {
+    public boolean hayConexionBD() {
+        try {
+            return DBConnection.getInstance().getConnection() != null;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error al verificar conexión BD", e);
+            return false;
+        }
+    }
+
+    /**
+     * Obtiene la última muestra analógica registrada para un canal específico.
+     * <p>
+     * Consulta el registro más reciente de int_proceso_vars_data para el canal
+     * ADC indicado. Utilizado por los timers de graficación cada 200ms.
+     * </p>
+     * 
+     * @param canal índice del canal ADC (0-7, correspondiente a ADC0-ADC7)
+     * @return arreglo de 2 elementos: [valor_adc, tiempo_ms]. Si no hay datos
+     *         registrados, retorna {0, -1}
+     * @see com.myproject.laboratorio1.api.IntProcesoDataDAO#getLatestAdcData(int)
+     * @see Laboratorio1#iniciarTimers()
+     */
+    public long[] obtenerUltimaMuestraAnalogica(int canal) {
+        try {
+            return procesoDataDAO.getLatestAdcData(canal);
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error al obtener muestra analógica desde BD", e);
             return new long[]{0L, -1L};
         }
-        SerialProtocolRunner.TimedValue tv = r.getAdcValue(canal);
-        return new long[]{tv.value, tv.tMs};
     }
 
     /**
-     * @brief Obtiene una muestra digital del runner activo.
-     * Los datos se obtienen en tiempo real del SerialProtocolRunner.
-     * La persistencia se hace automáticamente en SerialProtocolRunner via PersistenceBridge.
+     * Obtiene la última muestra digital registrada (estado de DIP switches).
+     * <p>
+     * Consulta los registros más recientes de int_proceso_vars_data para los
+     * 4 DIP switches (DIN0-DIN3) y los compone en un nibble de 4 bits.
+     * Utilizado por el timer de graficación digital cada 200ms.
+     * </p>
      * 
-     * @return arreglo {valor, tMs}; si no hay runner activo devuelve {0, -1}.
+     * @return arreglo de 2 elementos: [nibble_4bits, tiempo_ms]. El nibble tiene
+     *         el formato: bit0=DIN0, bit1=DIN1, bit2=DIN2, bit3=DIN3.
+     *         Si no hay datos, retorna {0, -1}
+     * @see com.myproject.laboratorio1.api.IntProcesoDataDAO#getLatestDigitalData()
+     * @see Laboratorio1#iniciarTimers()
      */
-    public long[] obtenerMuestraDigital() {
-        SerialProtocolRunner r = runner;
-        if (r == null || !r.isTransmissionActive()) {
+    public long[] obtenerUltimaMuestraDigital() {
+        try {
+            return procesoDataDAO.getLatestDigitalData();
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Error al obtener muestra digital desde BD", e);
             return new long[]{0L, -1L};
         }
-        SerialProtocolRunner.TimedValue tv = r.getDigitalPins();
-        return new long[]{tv.value, tv.tMs};
     }
 
     /**
-     * @brief Envia el periodo de muestreo ADC al microcontrolador y lo persiste en BD.
-     * Primero actualiza el valor en la tabla int_proceso, luego lo envía al micro.
+     * Actualiza el periodo de muestreo ADC en la base de datos.
+     * <p>
+     * <b>Flujo de sincronización automática:</b>
+     * </p>
+     * <pre>
+     * 1. DAO.actualizarTsAdc(500) → UPDATE int_proceso SET tiempo_muestreo=500
+     * 2. PersistenceBridge polling (cada 500ms) detecta cambio
+     * 3. Envía comando 0x08 (Set Ts ADC) al microcontrolador
+     * 4. Micro actualiza su periodo de muestreo ADC
+     * </pre>
+     * <p>
+     * La sincronización es automática gracias al thread de polling de
+     * {@link PersistenceBridge#pollDatabaseAndSendToMicro()}.
+     * </p>
      * 
-     * @param tsMs periodo en milisegundos (uint16 en protocolo).
-     * @return true si se actualizó en BD y se envió al micro; false si hubo error.
+     * @param tsMs periodo de muestreo en milisegundos (debe ser &gt; 0)
+     * @return {@code true} si la actualización en BD fue exitosa, {@code false} en caso contrario
+     * @see com.myproject.laboratorio1.api.IntProcesoDAO#updateTiempoMuestreo(int, int)
+     * @see PersistenceBridge#pollDatabaseAndSendToMicro()
      */
     public boolean actualizarTsAdc(int tsMs) {
-        // Primero actualizar en BD
         try {
-            procesoDAO.updateTiempoMuestreo(procesoActivoId, tsMs);
-            LOG.log(Level.INFO, "Ts ADC actualizado en BD: {0} ms", tsMs);
+            boolean resultado = procesoDAO.updateTiempoMuestreo(procesoActivoId, tsMs);
+            if (resultado) {
+                LOG.log(Level.INFO, "Ts ADC actualizado en BD: {0} ms", tsMs);
+            }
+            return resultado;
         } catch (SQLException e) {
             LOG.log(Level.SEVERE, "Error al actualizar Ts ADC en BD", e);
             return false;
         }
-        
-        // Luego enviar al microcontrolador
-        SerialProtocolRunner r = runner;
-        if (r != null && r.isTransmissionActive()) {
-            SerialProtocolRunner.commandSetTsAdc(r, tsMs);
-            LOG.log(Level.FINE, "Ts ADC enviado al micro: {0} ms", tsMs);
-            return true;
-        }
-        
-        LOG.log(Level.WARNING, "No hay runner activo para enviar Ts ADC");
-        return false;
     }
 
     /**
-     * @brief Envia el periodo de muestreo digital (DIP) al microcontrolador y lo persiste en BD.
-     * Primero actualiza el valor en la tabla int_proceso (tiempo_muestreo_2), luego lo envía al micro.
+     * Actualiza el periodo de muestreo digital (DIP switches) en la base de datos.
+     * <p>
+     * <b>Flujo de sincronización automática:</b>
+     * </p>
+     * <pre>
+     * 1. DAO.actualizarTsDip(1000) → UPDATE int_proceso SET tiempo_muestreo_2=1000
+     * 2. PersistenceBridge polling (cada 500ms) detecta cambio
+     * 3. Envía comando 0x03 (Set Ts DIP) al microcontrolador
+     * 4. Micro actualiza su periodo de muestreo de DIP switches
+     * </pre>
+     * <p>
+     * La sincronización es automática gracias al thread de polling de
+     * {@link PersistenceBridge#pollDatabaseAndSendToMicro()}.
+     * </p>
      * 
-     * @param tsMs periodo en milisegundos (uint16 en protocolo).
-     * @return true si se actualizó en BD y se envió al micro; false si hubo error.
+     * @param tsMs periodo de muestreo en milisegundos (debe ser &gt; 0)
+     * @return {@code true} si la actualización en BD fue exitosa, {@code false} en caso contrario
+     * @see com.myproject.laboratorio1.api.IntProcesoDAO#updateTiempoMuestreo2(int, int)
+     * @see PersistenceBridge#pollDatabaseAndSendToMicro()
      */
     public boolean actualizarTsDip(int tsMs) {
-        // Primero actualizar en BD
         try {
-            procesoDAO.updateTiempoMuestreo2(procesoActivoId, tsMs);
-            LOG.log(Level.INFO, "Ts DIP actualizado en BD: {0} ms", tsMs);
+            boolean resultado = procesoDAO.updateTiempoMuestreo2(procesoActivoId, tsMs);
+            if (resultado) {
+                LOG.log(Level.INFO, "Ts DIP actualizado en BD: {0} ms", tsMs);
+            }
+            return resultado;
         } catch (SQLException e) {
             LOG.log(Level.SEVERE, "Error al actualizar Ts DIP en BD", e);
             return false;
         }
-        
-        // Luego enviar al microcontrolador
-        SerialProtocolRunner r = runner;
-        if (r != null && r.isTransmissionActive()) {
-            SerialProtocolRunner.commandSetTsDip(r, tsMs);
-            LOG.log(Level.FINE, "Ts DIP enviado al micro: {0} ms", tsMs);
-            return true;
-        }
-        
-        LOG.log(Level.WARNING, "No hay runner activo para enviar Ts DIP");
-        return false;
     }
 
     /**
-     * @brief Envia la mascara de LEDs (bits 0-3) al microcontrolador y persiste en BD.
-     * Actualiza los valores de las referencias digitales (DOUT0-DOUT3) en int_proceso_refs_data.
+     * Actualiza la máscara de LEDs en la base de datos.
+     * <p>
+     * <b>Flujo de sincronización automática:</b>
+     * </p>
+     * <pre>
+     * 1. DAO.enviarMascaraLeds(0b1010) → INSERT int_proceso_refs_data con valor=10
+     * 2. PersistenceBridge polling (cada 500ms) detecta cambio
+     * 3. Envía comando 0x01 (Set LED Mask) al microcontrolador
+     * 4. Micro actualiza estado de los 4 LEDs (D8-D11)
+     * </pre>
+     * <p>
+     * La máscara es un nibble de 4 bits donde cada bit controla un LED:
+     * </p>
+     * <ul>
+     *   <li>Bit 0: LED0 (D8)</li>
+     *   <li>Bit 1: LED1 (D9)</li>
+     *   <li>Bit 2: LED2 (D10)</li>
+     *   <li>Bit 3: LED3 (D11)</li>
+     * </ul>
      * 
-     * @param mask valor 0..255 con la mascara de LEDs (solo bits 0-3 se usan).
-     * @return true si se persistió en BD y se envió al micro; false si hubo error.
+     * @param mask máscara de 4 bits (0-15) que representa el estado de los LEDs
+     * @return {@code true} si la inserción en BD fue exitosa, {@code false} en caso contrario
+     * @see com.myproject.laboratorio1.api.IntProcesoDataDAO#insertRefsData(int)
+     * @see PersistenceBridge#pollDatabaseAndSendToMicro()
      */
     public boolean enviarMascaraLeds(int mask) {
-        // Extraer los 4 bits de la máscara (DOUT0-DOUT3)
         int maskedValue = mask & 0x0F;
         
-        // Persistir en BD
         try {
             procesoDataDAO.insertRefsData(maskedValue);
             LOG.log(Level.INFO, "Máscara LEDs persistida en BD: 0x{0}", Integer.toHexString(maskedValue));
+            return true;
         } catch (SQLException e) {
             LOG.log(Level.SEVERE, "Error al persistir máscara LEDs en BD", e);
             return false;
         }
-        
-        // Enviar al microcontrolador
-        SerialProtocolRunner r = runner;
-        if (r != null && r.isTransmissionActive()) {
-            SerialProtocolRunner.commandSetLedMask(r, mask);
-            LOG.log(Level.FINE, "Máscara LEDs enviada al micro: 0x{0}", Integer.toHexString(mask));
-            return true;
-        }
-        
-        LOG.log(Level.WARNING, "No hay runner activo para enviar máscara LEDs");
-        return false;
     }
     
     /**
-     * @brief Obtiene el periodo de muestreo ADC configurado en BD para el proceso activo.
-     * @return periodo en ms, o 0 si hay error.
+     * Obtiene el periodo de muestreo ADC configurado en la base de datos.
+     * <p>
+     * Consulta el campo {@code tiempo_muestreo} de la tabla {@code int_proceso}
+     * para el proceso activo actual.
+     * </p>
+     * 
+     * @return periodo de muestreo en milisegundos, o 0 si ocurre un error
+     * @see com.myproject.laboratorio1.api.IntProcesoDAO#getTiempoMuestreo(int)
      */
     public int obtenerTsAdcDesdeBD() {
         try {
@@ -250,8 +339,14 @@ public class DAO {
     }
     
     /**
-     * @brief Obtiene el periodo de muestreo DIP configurado en BD para el proceso activo.
-     * @return periodo en ms, o 0 si hay error.
+     * Obtiene el periodo de muestreo digital (DIP switches) configurado en la base de datos.
+     * <p>
+     * Consulta el campo {@code tiempo_muestreo_2} de la tabla {@code int_proceso}
+     * para el proceso activo actual.
+     * </p>
+     * 
+     * @return periodo de muestreo en milisegundos, o 0 si ocurre un error
+     * @see com.myproject.laboratorio1.api.IntProcesoDAO#getTiempoMuestreo2(int)
      */
     public int obtenerTsDipDesdeBD() {
         try {

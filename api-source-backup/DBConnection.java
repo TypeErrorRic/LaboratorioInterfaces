@@ -11,9 +11,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * <b>Descripción</b>
- * <p align="justify">
- * Clase para el establecimiento de la conexión con la base de datos del laboratorio virtual.
+ * Clase Singleton para gestionar la conexión a la base de datos MySQL del laboratorio virtual.
+ * <p>
  * Implementa el patrón Singleton para mantener una única conexión activa.
  * La conexión puede establecerse mediante parámetros del constructor o mediante
  * un archivo de configuración de texto.

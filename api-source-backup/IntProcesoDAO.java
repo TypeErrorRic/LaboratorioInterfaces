@@ -12,11 +12,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * <b>Descripción</b>
- * <p align="justify">
- * Interfaz DAO para la inserción, selección, edición y borrado de registros
- * en la tabla int_proceso. Esta tabla almacena información sobre los procesos
- * del laboratorio virtual.
+ * DAO para la gestión de procesos (experimentos de laboratorio).
+ * <p>
+ * Proporciona operaciones CRUD para la tabla int_proceso que almacena
+ * información sobre los procesos del laboratorio virtual.
  * </p>
  * 
  * <p><b>Estructura de la tabla int_proceso:</b></p>

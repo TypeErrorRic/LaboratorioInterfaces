@@ -6,6 +6,15 @@
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
     <dependencies>
+        <!-- API Local -->
+        <dependency>
+            <groupId>com.myproject</groupId>
+            <artifactId>interfacesDAO</artifactId>
+            <version>1.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/src/Libs/interfacesDAO.jar</systemPath>
+        </dependency>
+        
         <dependency>
             <groupId>org.netbeans.external</groupId>
             <artifactId>AbsoluteLayout</artifactId>
@@ -45,6 +54,9 @@
                 <version>3.10.1</version>
                 <configuration>
                     <release>21</release>
+                    <excludes>
+                        <exclude>**/api/**</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
             

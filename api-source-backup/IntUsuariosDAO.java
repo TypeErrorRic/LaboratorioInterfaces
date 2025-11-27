@@ -14,9 +14,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * <b>Descripción</b>
- * <p align="justify">
- * Interfaz DAO agrupada para la gestión de registros de la tabla int_usuarios
+ * DAO agrupado para la gestión de usuarios y programación de procesos.
+ * <p>
+ * Gestiona registros de las tablas int_usuarios
  * y la tabla int_usuarios_proceso. Proporciona métodos para la gestión completa
  * de usuarios (inserción, selección, edición y borrado) y la programación de
  * uso de procesos por usuarios específicos.

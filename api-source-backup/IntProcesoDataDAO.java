@@ -14,10 +14,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * <b>Descripción</b>
- * <p align="justify">
- * Interfaz DAO agrupada para la inserción, selección y borrado de registros en las tablas
- * int_proceso_refs_data e int_proceso_vars_data. Esta interfaz maneja tanto los datos de
+ * DAO para la gestión de datos de variables y referencias de procesos.
+ * <p>
+ * Maneja el almacenamiento y recuperación de datos en las tablas
+ * int_proceso_refs_data e int_proceso_vars_data. Gestiona tanto los datos de
  * variables de entrada (8 analógicas + 4 digitales) como los datos de salida/referencias
  * (4 salidas digitales) del sistema embebido.
  * </p>
@@ -696,7 +696,7 @@ public class IntProcesoDataDAO {
      * al canal ADC solicitado.
      * </p>
      * <p>
-     * <b>Usado por:</b> {@link Laboratorio1#iniciarTimers()} para graficación
+     * <b>Uso típico:</b> Lectura de datos para graficación
      * de señales analógicas desde la base de datos.
      * </p>
      * 
@@ -704,8 +704,7 @@ public class IntProcesoDataDAO {
      * @return array de 2 elementos: [{@code valor}, {@code tiempo_ms}] si hay datos,
      *         o [{@code 0}, {@code -1}] si no hay datos disponibles
      * @throws SQLException si ocurre un error durante la consulta a la base de datos
-     * @see #insertVarsData(int, long)
-     * @see DAO#obtenerUltimaMuestraAnalogica(int)
+     * @see #insertVarsData(long, int[], int[])
      */
     public long[] getLatestAdcData(int canalAdc) throws SQLException {
         if (adcVarIds == null || canalAdc < 0 || canalAdc >= adcVarIds.length) {
@@ -748,7 +747,7 @@ public class IntProcesoDataDAO {
      *   <li>Bit 3: DIN3 (DIP switch 3)</li>
      * </ul>
      * <p>
-     * <b>Usado por:</b> {@link Laboratorio1#iniciarTimers()} para graficación
+     * <b>Uso típico:</b> Lectura de datos para graficación
      * de señales digitales desde la base de datos.
      * </p>
      * <p>
@@ -759,8 +758,7 @@ public class IntProcesoDataDAO {
      * @return array de 2 elementos: [{@code nibble_valor}, {@code tiempo_ms}] si hay datos,
      *         o [{@code 0}, {@code -1}] si no hay datos disponibles o configuración inválida
      * @throws SQLException si ocurre un error durante la consulta a la base de datos
-     * @see #insertVarsData(int, long)
-     * @see DAO#obtenerUltimaMuestraDigital()
+     * @see #insertVarsData(long, int[], int[])
      */
     public long[] getLatestDigitalData() throws SQLException {
         if (dinVarIds == null || dinVarIds.length < 4) {

@@ -12,10 +12,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * <b>Descripción</b>
- * <p align="justify">
- * Interfaz DAO agrupada para la selección (solo lectura) de registros en las tablas
- * int_proceso_refs, int_proceso_control e int_proceso_vars. Esta interfaz permite
+ * DAO para la gestión de definiciones de variables y referencias de procesos.
+ * <p>
+ * Proporciona operaciones de solo lectura sobre las tablas
+ * int_proceso_refs, int_proceso_control e int_proceso_vars. Permite
  * consultar las definiciones y configuraciones de las variables de entrada, salida
  * y parámetros de control de los procesos.
  * </p>

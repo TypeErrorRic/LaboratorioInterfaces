@@ -70,8 +70,8 @@ static volatile uint8_t ledMask = 0x00; // bits 0..3
 static uint8_t lastDipMask = 0x00;      // bits 0..3
 static uint16_t lastAdc[8] = {0, 0, 0, 0, 0, 0, 0, 0}; // 0-3: originales, 4-7: divididas /2
 
-static uint16_t samplePeriodDipMs = 100; // tiempo de muestreo DIP
-static uint16_t samplePeriodAdcMs = 50;  // tiempo de muestreo ADC
+static uint16_t samplePeriodDipMs = 4000; // tiempo de muestreo DIP
+static uint16_t samplePeriodAdcMs = 2000;  // tiempo de muestreo ADC
 static const uint16_t SAMPLE_MIN_MS = 10;
 static const uint16_t SAMPLE_MAX_MS = 5000;
 static bool streamingEnabled = false;

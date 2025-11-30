@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laboratorio - Panel</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #4cc9f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, #111827 0, #0d1117 45%), #0d1117;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid #30363d;
+      border-radius: 14px;
+      max-width: 520px;
+      width: 100%;
+      padding: 28px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+    }
+    .links {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    a.card {
+      display: block;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid #30363d;
+      background: #0f1523;
+      color: var(--text);
+      text-decoration: none;
+      transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    }
+    a.card:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+    }
+    .label {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(76, 201, 240, 0.14);
+      color: var(--accent);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .title { font-weight: 600; margin: 0 0 4px; }
+    .desc { margin: 0; color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>Laboratorio virtual</h1>
+    <p>Elige la vista que quieras abrir.</p>
+    <div class="links">
+      <a class="card" href="./web/ViewChannel0.html">
+        <span class="label">Analógico</span>
+        <div class="title">Canal ADC0</div>
+        <p class="desc">Gráfica en vivo del canal 0.</p>
+      </a>
+      <a class="card" href="./web/ViewChannel1.html">
+        <span class="label">Analógico</span>
+        <div class="title">Canal ADC1</div>
+        <p class="desc">Gráfica en vivo del canal 1.</p>
+      </a>
+      <a class="card" href="./web/ViewChannel2.html">
+        <span class="label">Analógico</span>
+        <div class="title">Canal ADC2</div>
+        <p class="desc">Gráfica en vivo del canal 2.</p>
+      </a>
+      <a class="card" href="./web/ViewChannel3.html">
+        <span class="label">Analógico</span>
+        <div class="title">Canal ADC3</div>
+        <p class="desc">Gráfica en vivo del canal 3.</p>
+      </a>
+      <a class="card" href="./web/ViewDigital0.html">
+        <span class="label">Digital</span>
+        <div class="title">Digital 0</div>
+        <p class="desc">Vista rápida de la entrada digital 0.</p>
+      </a>
+      <a class="card" href="./web/ViewDigital1.html">
+        <span class="label">Digital</span>
+        <div class="title">Digital 1</div>
+        <p class="desc">Vista rápida de la entrada digital 1.</p>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

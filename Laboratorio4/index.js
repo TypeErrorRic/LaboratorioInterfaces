@@ -2,6 +2,9 @@ require('dotenv').config();
 const SerialListener = require('./serialListener');
 const DatabaseConnection = require('./dbConnection');
 const { insertFrameData, formatDataForLog } = require('./dataInserter');
+const { createWebSocketServer } = require('./wsServer');
+const express = require('express');
+const path = require('path');
 
 /**
  * Sistema de adquisición de datos del microcontrolador
@@ -11,17 +14,20 @@ const { insertFrameData, formatDataForLog } = require('./dataInserter');
 // Configuración desde variables de entorno
 const config = {
   serial: {
-    port: process.env.SERIAL_PORT || 'COM3',
+    port: process.env.SERIAL_PORT || 'COM2',
     baudRate: parseInt(process.env.SERIAL_BAUDRATE) || 115200,
     reconnectDelay: parseInt(process.env.SERIAL_RECONNECT_DELAY) || 3000
   },
   database: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || 'ricps',
-    password: process.env.DB_PASSWORD || 'TOBY25',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '1234',
     database: process.env.DB_NAME || 'laboratorio_virtual',
     reconnectDelay: parseInt(process.env.DB_RECONNECT_DELAY) || 5000
+  },
+  websocket: {
+    port: parseInt(process.env.WS_PORT) || 8080
   },
   variables: {
     adcBaseId: parseInt(process.env.ADC_BASE_ID) || 10,
@@ -33,6 +39,8 @@ const config = {
 let startTime = null;
 let frameCount = 0;
 let errorCount = 0;
+let wsServer = null;
+let httpServer = null;
 
 // Instancias
 const serialListener = new SerialListener(
@@ -84,8 +92,34 @@ async function initialize() {
   console.log('Configuración:');
   console.log(`  Serial:   ${config.serial.port} @ ${config.serial.baudRate} baud`);
   console.log(`  Database: ${config.database.database}@${config.database.host}:${config.database.port}`);
+  console.log(`  WebSocket: ws://localhost:${config.websocket.port}`);
   console.log(`  Variables: ADC=${config.variables.adcBaseId}-${config.variables.adcBaseId + 7}, DIN=${config.variables.dinBaseId}-${config.variables.dinBaseId + 3}`);
   console.log('');
+
+  // Servir archivos est?ticos (index.html y web/*) en el mismo puerto usando Express
+  const app = express();
+  const staticDir = __dirname;
+
+  app.use(express.static(staticDir));
+  app.use('/web', express.static(path.join(staticDir, "web")));
+
+  app.get("/", (_req, res) => {
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+
+  httpServer = app.listen(config.websocket.port, () => {
+    console.log(`[HTTP] Servidor disponible en http://localhost:${config.websocket.port}`);
+  });
+
+  // Iniciar servidor WebSocket
+  console.log('[App] Iniciando servidor WebSocket...');
+  wsServer = createWebSocketServer(httpServer);
+  if (wsServer.events) {
+    wsServer.events.on('listening', ({ port }) => {
+      console.log(`[WS] Servidor WebSocket escuchando en ws://localhost:${port}`);
+    });
+  }
+  await wsServer.startServer();
 
   // Conectar a la base de datos
   console.log('[App] Conectando a la base de datos...');
@@ -146,6 +180,12 @@ async function shutdown() {
   
   await serialListener.close();
   await db.close();
+  if (wsServer) {
+    await wsServer.stopServer();
+  }
+  if (httpServer) {
+    await new Promise(resolve => httpServer.close(() => resolve()));
+  }
   
   console.log(`[App] Resumen final: ${frameCount} tramas procesadas, ${errorCount} errores`);
   console.log('[App] Aplicación cerrada correctamente');

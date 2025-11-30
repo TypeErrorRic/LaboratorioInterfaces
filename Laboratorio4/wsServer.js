@@ -6,9 +6,6 @@ const IntProcesoData = require('./api/IntProcesoData');
 // Configuracion base del WS y de las variables a consultar
 const DEFAULT_WS_PORT = parseInt(process.env.WS_PORT, 10) || 8080;              // Puerto WS (o HTTP host)
 const POLL_INTERVAL_MS = parseInt(process.env.WS_POLL_INTERVAL_MS, 10) || 500; // Intervalo de polling a BD
-const ANALOG_BASE_ID = parseInt(process.env.ADC_BASE_ID, 10) || 10;             // ID inicial de canales analogicos
-const ANALOG_CHANNELS = 8;                                                      // Numero de canales analogicos
-const analogVarIds = Array.from({ length: ANALOG_CHANNELS }, (_, i) => ANALOG_BASE_ID + i);
 
 /**
  * Crea un servidor WebSocket con manejo de DB (polling) y helpers de cierre.
@@ -123,7 +120,7 @@ function createWebSocketServer(portOrServer = DEFAULT_WS_PORT) {
 
       try {
         // Traer todas las filas nuevas (id > lastBroadcastId) para los vars solicitados
-        const rows = await IntProcesoData.getAnalogDataAfterId(lastBroadcastId, analogVarIds);
+        const rows = await IntProcesoData.getVarsDataAfterId(lastBroadcastId);
 
         if (rows.length > 0) {
           const maxId = rows[rows.length - 1].id;

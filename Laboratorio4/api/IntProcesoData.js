@@ -16,26 +16,30 @@ const DB_CONFIG = {
 // Analog variable ID range (ADC0-ADC7)
 const ANALOG_BASE_ID = parseInt(process.env.ADC_BASE_ID, 10) || 10;
 const ANALOG_MAX_ID = ANALOG_BASE_ID + 7;
+const ANALOG_VAR_IDS = Array.from({ length: ANALOG_MAX_ID - ANALOG_BASE_ID + 1 }, (_, i) => ANALOG_BASE_ID + i);
+
+// Digital variable ID range (DIN0-DIN3)
+const DIGITAL_BASE_ID = parseInt(process.env.DIN_BASE_ID, 10) || 18;
+const DIGITAL_MAX_ID = DIGITAL_BASE_ID + 3;
+const DIGITAL_VAR_IDS = Array.from({ length: DIGITAL_MAX_ID - DIGITAL_BASE_ID + 1 }, (_, i) => DIGITAL_BASE_ID + i);
+
+const ALL_VAR_IDS = [...ANALOG_VAR_IDS, ...DIGITAL_VAR_IDS];
 
 const pool = mysql.createPool(DB_CONFIG);
 
-// Valida que el varId caiga en el rango analogico permitido
-function validateAnalogVarId(varId) {
-  const numericId = parseInt(varId, 10);
-  if (Number.isNaN(numericId) || numericId < ANALOG_BASE_ID || numericId > ANALOG_MAX_ID)
-    throw new Error(`varId ${varId} is outside analog range ${ANALOG_BASE_ID}-${ANALOG_MAX_ID}`);
-  return numericId;
+function normalizeVarIds(varIds, fallback) {
+  const ids = Array.isArray(varIds) && varIds.length > 0 ? varIds : fallback;
+  return [...new Set(ids.map((id) => parseInt(id, 10)).filter((n) => !Number.isNaN(n)))];
 }
 
 /**
- * Returns all records newer than a given id for the requested analog variables.
- * Ordered by ascending id so consumers puedan emitir en orden de llegada.
- * @param {number} lastId id a partir del cual traer datos (exclusivo)
- * @param {Array<number>} varIds lista de varIds analogicos
- * @param {number} limit limite maximo de filas a devolver
+ * Generic fetch for any allowed var ids (analog + digital).
+ * @param {number} lastId exclusive lower bound for id
+ * @param {Array<number>} varIds ids to include
+ * @param {number} limit maximum rows to return
  */
-async function getAnalogDataAfterId(lastId = 0, varIds = [], limit = 2000) {
-  const uniqueIds = [...new Set(varIds.map(validateAnalogVarId))];
+async function getVarsDataAfterId(lastId = 0, varIds = [], limit = 2000) {
+  const uniqueIds = normalizeVarIds(varIds, ALL_VAR_IDS);
   if (uniqueIds.length === 0) return [];
 
   const cappedLimit = Math.max(1, Math.min(limit, 5000));
@@ -62,6 +66,6 @@ async function close() {
 }
 
 module.exports = {
-  getAnalogDataAfterId,
+  getVarsDataAfterId,
   close
 };

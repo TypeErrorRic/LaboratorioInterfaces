@@ -51,7 +51,7 @@
     const ANALOG_BASE_ID = 10;
     const VAR_ID = ANALOG_BASE_ID + channel;
     const MAX_POINTS = 300;
-    const WINDOW_MS = 10000; // Mostrar solo los últimos 10 segundos
+    const WINDOW_MS = 10000; // Mostrar solo los ultimos 10 segundos
 
     // Elements
     const connStatusEl = document.getElementById('connStatus');
@@ -131,7 +131,7 @@
 
       dataset.sort((a, b) => a.x - b.x);
 
-      // Mantener una ventana móvil de 10 segundos
+      // Mantener una ventana movil de 10 segundos
       const latestX = dataset.length ? dataset[dataset.length - 1].x : null;
       if (latestX !== null) {
         const minWindow = latestX - WINDOW_MS;

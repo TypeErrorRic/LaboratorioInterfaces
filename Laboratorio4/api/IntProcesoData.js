@@ -65,7 +65,15 @@ async function close() {
   await pool.end();
 }
 
+/**
+ * Borra todas las filas de int_proceso_vars_data.
+ */
+async function clearVarsData() {
+  await pool.query('TRUNCATE TABLE int_proceso_vars_data');
+}
+
 module.exports = {
   getVarsDataAfterId,
+  clearVarsData,
   close
 };

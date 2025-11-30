@@ -10,18 +10,32 @@
     body { background: #0d1117; color: #e6edf3; }
     .card { background: #161b22; border-color: #30363d; }
     .badge-status { min-width: 110px; }
+    .recent-table { min-width: 180px; max-width: 220px; }
+    .recent-table .card-header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 25px;
+      color: #fff;
+      font-weight: 700;
+    }
+    .recent-table .card-header .fw-bold { font-size: 0.85rem; }
+    .recent-table table th,
+    .recent-table table td { text-align: center; }
   </style>
 </head>
 <body>
   <div class="container py-4">
     <div class="d-flex align-items-center mb-4">
       <div>
-        <h1 id="pageTitle" class="h3 mb-1">Analog Channel</h1>
-        <p class="mb-0 text-secondary">Data vs. time from int_proceso_vars_data</p>
+        <h1 id="pageTitle" class="h3 mb-1">Canal Analógico</h1>
+        <p class="mb-0 text-secondary">Datos vs. tiempo desde int_proceso_vars_data</p>
       </div>
       <div class="ms-auto d-flex gap-2">
-        <span id="connStatus" class="badge bg-danger badge-status">Disconnected</span>
-        <span id="lastUpdate" class="badge bg-secondary">Last update: --</span>
+        <span id="connStatus" class="badge bg-danger badge-status">Desconectado</span>
+        <span id="lastUpdate" class="badge bg-secondary">Última actualización: --</span>
       </div>
     </div>
 
@@ -37,7 +51,29 @@
             <div id="latestValue" class="h4 mb-0">--</div>
           </div>
         </div>
-        <canvas id="chart" height="120"></canvas>
+        <div class="d-lg-flex align-items-start gap-3">
+          <div class="flex-grow-1 mb-3 mb-lg-0">
+            <canvas id="chart" height="120"></canvas>
+          </div>
+          <div class="recent-table card bg-dark border-secondary flex-shrink-0">
+            <div class="card-header py-2">
+              <div class="fw-bold">Historial</div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-dark mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Valor</th>
+                    <th scope="col">Tiempo (s)</th>
+                  </tr>
+                </thead>
+                <tbody id="recentTableBody">
+                  <tr><td colspan="2" class="text-center text-secondary small">Sin datos</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -51,7 +87,7 @@
     const ANALOG_BASE_ID = 10;
     const VAR_ID = ANALOG_BASE_ID + channel;
     const MAX_POINTS = 300;
-    const WINDOW_MS = 10000; // Mostrar solo los ultimos 10 segundos
+    const WINDOW_S = 10; // Mostrar solo los ultimos 10 segundos
 
     // Elements
     const connStatusEl = document.getElementById('connStatus');
@@ -60,12 +96,14 @@
     const varIdLabel = document.getElementById('varIdLabel');
     const channelLabel = document.getElementById('channelLabel');
     const pageTitle = document.getElementById('pageTitle');
+    const recentTableBody = document.getElementById('recentTableBody');
     varIdLabel.textContent = VAR_ID;
     channelLabel.textContent = `ADC${channel}`;
-    pageTitle.textContent = `Analog Channel ADC${channel}`;
+    pageTitle.textContent = `Canal Analógico ADC${channel}`;
 
     let ws;
     let chart;
+    let baseTime = null; // Guarda la primera marca de tiempo para iniciar el eje X en 0
 
     function setStatus(connected) {
       connStatusEl.textContent = connected ? 'Connected' : 'Disconnected';
@@ -96,7 +134,7 @@
           scales: {
             x: {
               type: 'linear',
-              title: { display: true, text: 'Tiempo (ms)' },
+              title: { display: true, text: 'Tiempo (s)' },
               ticks: { color: '#9ba3af' },
               grid: { color: '#21262d' }
             },
@@ -112,11 +150,31 @@
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: ctx => ` Valor: ${ctx.parsed.y} (t=${ctx.parsed.x} ms)`
+                label: ctx => ` Valor: ${ctx.parsed.y} (t=${ctx.parsed.x.toFixed(2)} s)`
               }
             }
           }
         }
+      });
+    }
+
+    function updateRecentTable(dataset) {
+      recentTableBody.innerHTML = '';
+      const rows = dataset.slice(-10).reverse();
+      if (rows.length === 0) {
+        recentTableBody.innerHTML = '<tr><td colspan="2" class="text-center text-secondary small">Sin datos</td></tr>';
+        return;
+      }
+
+      rows.forEach(point => {
+        const tr = document.createElement('tr');
+        const valTd = document.createElement('td');
+        const timeTd = document.createElement('td');
+        valTd.textContent = point.y.toString();
+        timeTd.textContent = point.x.toFixed(2);
+        tr.appendChild(valTd);
+        tr.appendChild(timeTd);
+        recentTableBody.appendChild(tr);
       });
     }
 
@@ -126,7 +184,9 @@
       if (filtered.length === 0) return;
 
       filtered.forEach(row => {
-        dataset.push({ x: Number(row.tiempo), y: Number(row.valor) });
+        const time = Number(row.tiempo);
+        if (baseTime === null) baseTime = time;
+        dataset.push({ x: (time - baseTime) / 1000, y: Number(row.valor) });
       });
 
       dataset.sort((a, b) => a.x - b.x);
@@ -134,7 +194,7 @@
       // Mantener una ventana movil de 10 segundos
       const latestX = dataset.length ? dataset[dataset.length - 1].x : null;
       if (latestX !== null) {
-        const minWindow = latestX - WINDOW_MS;
+        const minWindow = latestX - WINDOW_S;
         while (dataset.length && dataset[0].x < minWindow) {
           dataset.shift();
         }
@@ -149,6 +209,7 @@
       const latest = filtered[filtered.length - 1];
       latestValueEl.textContent = latest.valor;
       lastUpdateEl.textContent = `Last update: ${formatTime()}`;
+      updateRecentTable(dataset);
       chart.update('none');
     }
 

@@ -3,6 +3,7 @@ const SerialListener = require('./serialListener');
 const DatabaseConnection = require('./dbConnection');
 const { insertFrameData, formatDataForLog } = require('./dataInserter');
 const { createWebSocketServer } = require('./wsServer');
+const IntProcesoData = require('./api/IntProcesoData');
 const express = require('express');
 const path = require('path');
 
@@ -95,6 +96,10 @@ async function initialize() {
   console.log(`  WebSocket: ws://localhost:${config.websocket.port}`);
   console.log(`  Variables: ADC=${config.variables.adcBaseId}-${config.variables.adcBaseId + 7}, DIN=${config.variables.dinBaseId}-${config.variables.dinBaseId + 3}`);
   console.log('');
+
+  console.log('[App] Limpiando tabla int_proceso_vars_data...');
+  await IntProcesoData.clearVarsData();
+  console.log('[App] Tabla int_proceso_vars_data vaciada');
 
   // Servir archivos est?ticos (index.html y web/*) en el mismo puerto usando Express
   const app = express();

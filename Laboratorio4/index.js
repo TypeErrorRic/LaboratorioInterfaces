@@ -4,8 +4,8 @@ const DatabaseConnection = require('./dbConnection');
 const { insertFrameData, formatDataForLog } = require('./dataInserter');
 const { createWebSocketServer } = require('./wsServer');
 const IntProcesoData = require('./api/IntProcesoData');
-const express = require('express');
-const path = require('path');
+const IntProcesoRefs = require('./api/IntProcesoRefs');
+const { setLedMask } = require('./commandProtocol');
 
 /**
  * Sistema de adquisición de datos del microcontrolador
@@ -41,7 +41,8 @@ let startTime = null;
 let frameCount = 0;
 let errorCount = 0;
 let wsServer = null;
-let httpServer = null;
+let doutPollingTimer = null;
+let lastDoutValues = { 0: -1, 1: -1, 2: -1, 3: -1 }; // Últimos valores conocidos de DOUT0-3
 
 // Instancias
 const serialListener = new SerialListener(
@@ -53,17 +54,64 @@ const serialListener = new SerialListener(
 const db = new DatabaseConnection(config.database);
 
 /**
- * Maneja la recepción de una trama
+ * Obtiene el tiempo relativo desde el inicio del sistema
+ * @returns {number} Tiempo en milisegundos desde startTime
  */
-async function handleFrame(parsedData) {
-  // Inicializar timestamp de referencia en la primera trama
+function getRelativeTime() {
   if (startTime === null) {
     startTime = Date.now();
     console.log('[App] Timestamp inicial establecido');
   }
+  return Date.now() - startTime;
+}
 
+/**
+ * Consulta la BD y envía comandos al microcontrolador si hay cambios en DOUT
+ */
+async function pollAndUpdateDout() {
+  try {
+    let mask = 0;
+    let hasChanges = false;
+
+    // Consultar últimos valores de DOUT0-3 (refIds 4-7)
+    for (let channel = 0; channel < 4; channel++) {
+      const refId = IntProcesoRefs.DOUT_BASE_ID + channel;
+      const latest = await IntProcesoRefs.getLatestRefValue(refId);
+      
+      if (latest) {
+        const newValue = latest.valor;
+        
+        // Si hay cambio, actualizar y marcar flag
+        if (lastDoutValues[channel] !== newValue) {
+          lastDoutValues[channel] = newValue;
+          hasChanges = true;
+          console.log(`[DOUT] DOUT${channel} cambió a ${newValue}`);
+        }
+        
+        // Construir máscara (bit 0 = DOUT0, bit 1 = DOUT1, etc.)
+        if (newValue === 1) {
+          mask |= (1 << channel);
+        }
+      }
+    }
+
+    // Solo enviar comando si hay cambios
+    if (hasChanges && serialListener.isOpen()) {
+      const command = setLedMask(mask);
+      serialListener.sendCommand(command);
+      console.log(`[DOUT] Comando SET_LED_MASK enviado: 0x${mask.toString(16).padStart(2, '0').toUpperCase()} (binario: ${mask.toString(2).padStart(4, '0')})`);
+    }
+  } catch (error) {
+    console.error('[DOUT] Error al consultar/actualizar DOUT:', error.message);
+  }
+}
+
+/**
+ * Maneja la recepción de una trama
+ */
+async function handleFrame(parsedData) {
   // Calcular tiempo relativo en milisegundos
-  const relativeTime = Date.now() - startTime;
+  const relativeTime = getRelativeTime();
 
   // Insertar datos en la base de datos
   const success = await insertFrameData(db, parsedData, relativeTime, config.variables);
@@ -101,24 +149,9 @@ async function initialize() {
   await IntProcesoData.clearVarsData();
   console.log('[App] Tabla int_proceso_vars_data vaciada');
 
-  // Servir archivos est?ticos (index.html y web/*) en el mismo puerto usando Express
-  const app = express();
-  const staticDir = __dirname;
-
-  app.use(express.static(staticDir));
-  app.use('/web', express.static(path.join(staticDir, "web")));
-
-  app.get("/", (_req, res) => {
-    res.sendFile(path.join(staticDir, "index.html"));
-  });
-
-  httpServer = app.listen(config.websocket.port, () => {
-    console.log(`[HTTP] Servidor disponible en http://localhost:${config.websocket.port}`);
-  });
-
-  // Iniciar servidor WebSocket
+  // Iniciar servidor WebSocket (solo WS, los estáticos los sirve Apache)
   console.log('[App] Iniciando servidor WebSocket...');
-  wsServer = createWebSocketServer(httpServer);
+  wsServer = createWebSocketServer(config.websocket.port, getRelativeTime);
   if (wsServer.events) {
     wsServer.events.on('listening', ({ port }) => {
       console.log(`[WS] Servidor WebSocket escuchando en ws://localhost:${port}`);
@@ -161,6 +194,11 @@ async function initialize() {
   console.log('[App] Abriendo puerto serial...');
   await serialListener.open();
 
+  // Iniciar polling de DOUT cada 500ms
+  const DOUT_POLL_INTERVAL = parseInt(process.env.DOUT_POLL_INTERVAL_MS) || 500;
+  console.log(`[App] Iniciando polling de DOUT cada ${DOUT_POLL_INTERVAL}ms...`);
+  doutPollingTimer = setInterval(pollAndUpdateDout, DOUT_POLL_INTERVAL);
+
   // Mostrar estadísticas cada 30 segundos
   setInterval(() => {
     if (frameCount > 0 || errorCount > 0) {
@@ -177,19 +215,27 @@ async function shutdown() {
   console.log('');
   console.log('[App] Cerrando aplicación...');
   
-  // Deshabilitar streaming antes de cerrar
+  // Detener polling de DOUT
+  if (doutPollingTimer) {
+    clearInterval(doutPollingTimer);
+    doutPollingTimer = null;
+  }
+  
+  // Deshabilitar streaming antes de cerrar y esperar ACK
   if (serialListener.streamingEnabled) {
-    serialListener.disableStreaming();
-    await new Promise(resolve => setTimeout(resolve, 200));
+    console.log('[App] Esperando confirmación del microcontrolador...');
+    try {
+      await serialListener.disableStreaming();
+      console.log('[App] Confirmación recibida');
+    } catch (error) {
+      console.warn('[App] No se recibió confirmación, continuando cierre...');
+    }
   }
   
   await serialListener.close();
   await db.close();
   if (wsServer) {
     await wsServer.stopServer();
-  }
-  if (httpServer) {
-    await new Promise(resolve => httpServer.close(() => resolve()));
   }
   
   console.log(`[App] Resumen final: ${frameCount} tramas procesadas, ${errorCount} errores`);

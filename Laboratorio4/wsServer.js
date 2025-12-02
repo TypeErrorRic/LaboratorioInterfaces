@@ -2,16 +2,18 @@ require('dotenv').config();
 const { EventEmitter } = require('events');
 const WebSocket = require('ws');
 const IntProcesoData = require('./api/IntProcesoData');
+const IntProcesoRefs = require('./api/IntProcesoRefs');
 
 // Configuracion base del WS y de las variables a consultar
-const DEFAULT_WS_PORT = parseInt(process.env.WS_PORT, 10) || 8080;              // Puerto WS (o HTTP host)
+const DEFAULT_WS_PORT = parseInt(process.env.WS_PORT, 10) || 8090;              // Puerto WS (o HTTP host)
 const POLL_INTERVAL_MS = parseInt(process.env.WS_POLL_INTERVAL_MS, 10) || 500; // Intervalo de polling a BD
 
 /**
  * Crea un servidor WebSocket con manejo de DB (polling) y helpers de cierre.
  * @param {number|import('http').Server} portOrServer Puerto o servidor HTTP ya creado.
+ * @param {Function} getRelativeTime Función opcional para obtener tiempo relativo
  */
-function createWebSocketServer(portOrServer = DEFAULT_WS_PORT) {
+function createWebSocketServer(portOrServer = DEFAULT_WS_PORT, getRelativeTime = null) {
   let listenPort = null;
   let options = null;
 
@@ -21,7 +23,7 @@ function createWebSocketServer(portOrServer = DEFAULT_WS_PORT) {
   } else if (portOrServer && typeof portOrServer.on === 'function') {
     options = { server: portOrServer };
   } else {
-    throw new Error('Par\u00e1metro inv\u00e1lido para crear el WebSocket');
+    throw new Error('Parámetro inválido para crear el WebSocket');
   }
 
   const wss = new WebSocket.Server(options);
@@ -56,14 +58,26 @@ function createWebSocketServer(portOrServer = DEFAULT_WS_PORT) {
     socket.on('message', (data) => {
       wsEvents.emit('client_message', { data });
 
-      // Responder a pings simples para pruebas manuales
+      // Handle incoming messages
       try {
         const msg = JSON.parse(data.toString());
+        
+        // Handle ping
         if (msg && msg.type === 'ping') {
           socket.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
         }
-      } catch {
-        // Ignorar mensajes no JSON
+        
+        // Handle toggle commands (set digital output)
+        if (msg && msg.type === 'set_dout') {
+          handleSetDout(msg, socket);
+        }
+
+        // Handle request for latest DOUT value
+        if (msg && msg.type === 'get_latest_dout') {
+          handleGetLatestDout(msg, socket);
+        }
+      } catch (err) {
+        console.error('[WS] Error parsing message:', err.message);
       }
     });
     socket.on('close', () => handleClose(socket));
@@ -79,6 +93,91 @@ function createWebSocketServer(portOrServer = DEFAULT_WS_PORT) {
   function handleError(err, socket) {
     wsEvents.emit('client_error', { error: err });
     handleClose(socket);
+  }
+
+  /**
+   * Handle set digital output command from client
+   */
+  async function handleSetDout(msg, socket) {
+    try {
+      const { refId, valor } = msg;
+      
+      // Validate parameters
+      if (typeof refId !== 'number' || typeof valor !== 'number') {
+        socket.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Invalid parameters for set_dout' 
+        }));
+        return;
+      }
+
+      // Calculate relative time using the function from index.js or fallback to Date.now()
+      const timestamp = getRelativeTime ? getRelativeTime() : Date.now();
+
+      // Insert into database
+      const result = await IntProcesoRefs.insertRefData(refId, valor, timestamp);
+      
+      // Send success response to client
+      socket.send(JSON.stringify({ 
+        type: 'set_dout_response', 
+        success: true,
+        data: result
+      }));
+
+      // Broadcast to all clients
+      broadcast({
+        type: 'dout_changed',
+        refId,
+        valor,
+        tiempo: timestamp
+      });
+
+      wsEvents.emit('dout_set', { refId, valor, tiempo: timestamp });
+    } catch (error) {
+      console.error('[WS] Error setting DOUT:', error.message);
+      socket.send(JSON.stringify({ 
+        type: 'error', 
+        message: 'Failed to set digital output' 
+      }));
+      wsEvents.emit('dout_error', { error });
+    }
+  }
+
+  /**
+   * Handle get latest DOUT value request from client
+   */
+  async function handleGetLatestDout(msg, socket) {
+    try {
+      const { refId } = msg;
+      
+      // Validate parameters
+      if (typeof refId !== 'number') {
+        socket.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Invalid refId for get_latest_dout' 
+        }));
+        return;
+      }
+
+      // Get latest value from database
+      const latestValue = await IntProcesoRefs.getLatestRefValue(refId);
+      
+      // Send response to client
+      socket.send(JSON.stringify({ 
+        type: 'latest_dout_response', 
+        refId,
+        data: latestValue
+      }));
+
+      wsEvents.emit('latest_dout_requested', { refId, found: !!latestValue });
+    } catch (error) {
+      console.error('[WS] Error getting latest DOUT:', error.message);
+      socket.send(JSON.stringify({ 
+        type: 'error', 
+        message: 'Failed to get latest digital output value' 
+      }));
+      wsEvents.emit('latest_dout_error', { error });
+    }
   }
 
   /**

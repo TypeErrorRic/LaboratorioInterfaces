@@ -93,7 +93,7 @@
   <script>
     // Config
     const qs = new URLSearchParams(location.search);
-    const WS_PORT = parseInt(qs.get('wsPort')) || (parseInt(location.port) || 8080);
+    const WS_PORT = 8090;
     const channel = 0; // Este archivo siempre muestra DIN0
     const WS_URL = `ws://${location.hostname}:${WS_PORT}`;
     const DIGITAL_BASE_ID = 18;

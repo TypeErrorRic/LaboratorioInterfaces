@@ -81,7 +81,7 @@
   <script>
     // Config
     const qs = new URLSearchParams(location.search);
-    const WS_PORT = parseInt(qs.get('wsPort')) || (parseInt(location.port) || 8080);
+    const WS_PORT = 8090;
     const channel = 1; // Este archivo siempre muestra ADC1
     const WS_URL = `ws://${location.hostname}:${WS_PORT}`;
     const ANALOG_BASE_ID = 10;
@@ -114,6 +114,11 @@
       return new Date(ts).toLocaleTimeString();
     }
 
+    function adcToVoltage(adcValue) {
+      // Arduino Uno: 10-bit ADC (0-1023) con referencia de 5V
+      return ((adcValue / 1023) * 5.0).toFixed(3);
+    }
+
     function initChart() {
       const ctx = document.getElementById('chart').getContext('2d');
       chart = new Chart(ctx, {
@@ -139,8 +144,13 @@
               grid: { color: '#21262d' }
             },
             y: {
-              title: { display: true, text: 'Valor' },
-              ticks: { color: '#9ba3af' },
+              title: { display: true, text: 'Voltaje (V)' },
+              ticks: { 
+                color: '#9ba3af',
+                callback: function(value) {
+                  return value.toFixed(2) + ' V';
+                }
+              },
               grid: { color: '#21262d' },
               min: 0,
               max: 5
@@ -150,7 +160,7 @@
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: ctx => ` Valor: ${ctx.parsed.y} (t=${ctx.parsed.x.toFixed(2)} s)`
+                label: ctx => ` Voltaje: ${ctx.parsed.y.toFixed(3)} V (t=${ctx.parsed.x.toFixed(2)} s)`
               }
             }
           }
@@ -170,7 +180,7 @@
         const tr = document.createElement('tr');
         const valTd = document.createElement('td');
         const timeTd = document.createElement('td');
-        valTd.textContent = point.y.toString();
+        valTd.textContent = `${point.y.toFixed(3)} V`;
         timeTd.textContent = point.x.toFixed(2);
         tr.appendChild(valTd);
         tr.appendChild(timeTd);
@@ -186,7 +196,8 @@
       filtered.forEach(row => {
         const time = Number(row.tiempo);
         if (baseTime === null) baseTime = time;
-        dataset.push({ x: (time - baseTime) / 1000, y: Number(row.valor) });
+        const voltage = (Number(row.valor) / 1023) * 5.0;
+        dataset.push({ x: (time - baseTime) / 1000, y: voltage });
       });
 
       dataset.sort((a, b) => a.x - b.x);
@@ -207,7 +218,7 @@
       }
 
       const latest = filtered[filtered.length - 1];
-      latestValueEl.textContent = latest.valor;
+      latestValueEl.textContent = `${adcToVoltage(latest.valor)} V`;
       lastUpdateEl.textContent = `Last update: ${formatTime()}`;
       updateRecentTable(dataset);
       chart.update('none');

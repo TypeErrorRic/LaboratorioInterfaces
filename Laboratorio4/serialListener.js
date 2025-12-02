@@ -20,6 +20,8 @@ class SerialListener extends EventEmitter {
     this.frameCount = 0;
     this.streamingEnabled = false;
     this.commandResponseBuffer = Buffer.alloc(0);
+    this.pendingCommandResolve = null; // Para esperar respuestas de comandos
+    this.commandTimeout = null;
   }
 
   /**
@@ -88,6 +90,28 @@ class SerialListener extends EventEmitter {
   handleData(data) {
     // Acumular datos en el buffer
     this.buffer = Buffer.concat([this.buffer, data]);
+
+    // Si estamos esperando una respuesta de comando, intentar parsearla primero
+    if (this.pendingCommandResolve) {
+      this.commandResponseBuffer = Buffer.concat([this.commandResponseBuffer, data]);
+      const response = parseResponse(this.commandResponseBuffer);
+      
+      if (response) {
+        // Respuesta válida recibida
+        clearTimeout(this.commandTimeout);
+        this.commandResponseBuffer = Buffer.alloc(0);
+        const resolve = this.pendingCommandResolve;
+        this.pendingCommandResolve = null;
+        resolve(response);
+        return; // No procesar como trama de datos
+      }
+      
+      // Si el buffer de respuesta es muy grande, algo salió mal
+      if (this.commandResponseBuffer.length > 100) {
+        console.warn('[Serial] Buffer de respuesta muy grande, limpiando...');
+        this.commandResponseBuffer = Buffer.alloc(0);
+      }
+    }
 
     // Buscar tramas completas en el buffer
     const { frames, remainder } = findFrames(this.buffer);
@@ -160,37 +184,81 @@ class SerialListener extends EventEmitter {
   /**
    * Envía un comando al microcontrolador
    * @param {Buffer} command - Comando a enviar
+   * @param {boolean} waitResponse - Si debe esperar respuesta
+   * @param {number} timeout - Timeout en ms para esperar respuesta
+   * @returns {Promise<Object|void>}
    */
-  sendCommand(command) {
-    if (this.port && this.port.isOpen) {
+  sendCommand(command, waitResponse = false, timeout = 2000) {
+    return new Promise((resolve, reject) => {
+      if (!this.port || !this.port.isOpen) {
+        console.warn('[Serial] Puerto no abierto, no se puede enviar comando');
+        return reject(new Error('Puerto no abierto'));
+      }
+
       this.port.write(command, (err) => {
         if (err) {
           console.error('[Serial] Error al enviar comando:', err.message);
+          return reject(err);
         }
+
+        if (!waitResponse) {
+          return resolve();
+        }
+
+        // Configurar espera de respuesta
+        this.commandResponseBuffer = Buffer.alloc(0);
+        this.pendingCommandResolve = resolve;
+
+        // Configurar timeout
+        this.commandTimeout = setTimeout(() => {
+          this.pendingCommandResolve = null;
+          this.commandResponseBuffer = Buffer.alloc(0);
+          reject(new Error('Timeout esperando respuesta del microcontrolador'));
+        }, timeout);
       });
-    } else {
-      console.warn('[Serial] Puerto no abierto, no se puede enviar comando');
-    }
+    });
   }
 
   /**
    * Habilita el streaming de datos del microcontrolador
    */
-  enableStreaming() {
+  async enableStreaming() {
     console.log('[Serial] Enviando comando para habilitar streaming...');
     const cmd = streamingEnable(true);
-    this.sendCommand(cmd);
-    this.streamingEnabled = true;
+    try {
+      const response = await this.sendCommand(cmd, true, 2000);
+      if (response && response.isOk) {
+        console.log('[Serial] Streaming habilitado correctamente (ACK recibido)');
+        this.streamingEnabled = true;
+      } else {
+        console.warn('[Serial] Respuesta de streaming no OK:', response);
+        this.streamingEnabled = false;
+      }
+    } catch (error) {
+      console.error('[Serial] Error al habilitar streaming:', error.message);
+      this.streamingEnabled = false;
+    }
   }
 
   /**
    * Deshabilita el streaming de datos del microcontrolador
+   * @returns {Promise<void>}
    */
-  disableStreaming() {
+  async disableStreaming() {
     console.log('[Serial] Enviando comando para deshabilitar streaming...');
     const cmd = streamingEnable(false);
-    this.sendCommand(cmd);
-    this.streamingEnabled = false;
+    try {
+      const response = await this.sendCommand(cmd, true, 2000);
+      if (response && response.isOk) {
+        console.log('[Serial] Streaming deshabilitado correctamente (ACK recibido)');
+        this.streamingEnabled = false;
+      } else {
+        console.warn('[Serial] Respuesta de disable streaming no OK:', response);
+      }
+    } catch (error) {
+      console.error('[Serial] Error al deshabilitar streaming:', error.message);
+      // Continuar de todas formas
+    }
   }
 }
 

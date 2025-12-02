@@ -1,10 +1,354 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toggle DOUT1</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #0d1117; color: #e6edf3; }
+    .card { background: #161b22; border-color: #30363d; }
+    .badge-status { min-width: 110px; }
+    
+    /* Toggle Switch Styles */
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 40px;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 120px;
+      height: 60px;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e55353;
+      transition: .4s;
+      border-radius: 60px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 46px;
+      width: 46px;
+      left: 7px;
+      bottom: 7px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .toggle-slider {
+      background-color: #38d175;
+      box-shadow: 0 0 12px #38d175;
+    }
+    
+    input:checked + .toggle-slider:before {
+      transform: translateX(60px);
+    }
+    
+    .toggle-label {
+      font-size: 2.5rem;
+      font-weight: bold;
+      min-width: 120px;
+      text-align: center;
+    }
+    
+    .toggle-label.off { color: #e55353; }
+    .toggle-label.on { color: #38d175; }
+    
+    .state-history {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .state-history table {
+      font-size: 0.9rem;
+    }
+  </style>
 </head>
 <body>
-    <h1> Rivera Times</h1>
+  <div class="container py-4">
+    <div class="d-flex align-items-center mb-4">
+      <div>
+        <h1 class="h3 mb-1">Control Digital Output 1 (DOUT1)</h1>
+        <p class="mb-0 text-secondary">Control manual de salida digital desde int_proceso_refs_data</p>
+      </div>
+      <div class="ms-auto d-flex gap-2">
+        <span id="connStatus" class="badge bg-danger badge-status">Desconectado</span>
+        <span id="lastUpdate" class="badge bg-secondary">Última actualización: --</span>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <span class="badge bg-primary me-2">Ref ID: <span id="refIdLabel">5</span></span>
+            <span class="badge bg-warning text-dark">Output: DOUT1</span>
+          </div>
+          <div class="text-end">
+            <div class="text-secondary small">Current State</div>
+            <div class="h4 mb-0">
+              <span id="currentStateText" class="fw-bold">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="toggle-container">
+          <span id="labelOff" class="toggle-label off">OFF</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleSwitch">
+            <span class="toggle-slider"></span>
+          </label>
+          <span id="labelOn" class="toggle-label on" style="opacity: 0.3;">ON</span>
+        </div>
+
+        <div class="alert alert-info mt-3" role="alert">
+          <strong>Instrucciones:</strong> Use el interruptor para cambiar el estado de DOUT1. 
+          El cambio se guardará en la base de datos y el microcontrolador lo leerá automáticamente.
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark">
+        <h5 class="mb-0">Historial de Cambios</h5>
+      </div>
+      <div class="card-body state-history">
+        <table class="table table-dark table-striped table-hover mb-0">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Estado</th>
+              <th scope="col">Tiempo (ms)</th>
+              <th scope="col">Fecha</th>
+              <th scope="col">Hora</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <tr>
+              <td colspan="5" class="text-center text-secondary">Sin datos</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const WS_PORT = 8090;
+    const WS_URL = `ws://${location.hostname}:${WS_PORT}`;
+    const REF_ID = 5; // DOUT1
+    const MAX_HISTORY = 50;
+
+    // Elements
+    const connStatusEl = document.getElementById('connStatus');
+    const lastUpdateEl = document.getElementById('lastUpdate');
+    const currentStateText = document.getElementById('currentStateText');
+    const toggleSwitch = document.getElementById('toggleSwitch');
+    const labelOff = document.getElementById('labelOff');
+    const labelOn = document.getElementById('labelOn');
+    const historyTableBody = document.getElementById('historyTableBody');
+
+    let ws;
+    let isUpdating = false;
+    let historyData = [];
+    let baseTime = null; // Tiempo base para cálculos relativos
+
+    function setStatus(connected) {
+      connStatusEl.textContent = connected ? 'Conectado' : 'Desconectado';
+      connStatusEl.className = `badge badge-status ${connected ? 'bg-success' : 'bg-danger'}`;
+      toggleSwitch.disabled = !connected;
+    }
+
+    function formatTime(ts = Date.now()) {
+      return new Date(ts).toLocaleTimeString();
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '--';
+      return dateStr; // Ya viene en formato YYYY-MM-DD desde MySQL
+    }
+
+    function formatHora(horaStr) {
+      if (!horaStr) return '--';
+      return horaStr; // Ya viene en formato HH:MM:SS desde MySQL
+    }
+
+    function getRelativeTime(tiempo) {
+      if (baseTime === null) baseTime = tiempo;
+      return ((tiempo - baseTime) / 1000).toFixed(2); // Convertir a segundos
+    }
+
+    function updateUI(state) {
+      const isOn = Boolean(state);
+      toggleSwitch.checked = isOn;
+      currentStateText.textContent = isOn ? 'ON' : 'OFF';
+      currentStateText.className = `fw-bold ${isOn ? 'text-success' : 'text-danger'}`;
+      
+      labelOff.style.opacity = isOn ? '0.3' : '1';
+      labelOn.style.opacity = isOn ? '1' : '0.3';
+      
+      lastUpdateEl.textContent = `Última actualización: ${formatTime()}`;
+    }
+
+    function addToHistory(record) {
+      historyData.unshift(record);
+      if (historyData.length > MAX_HISTORY) {
+        historyData = historyData.slice(0, MAX_HISTORY);
+      }
+      renderHistory();
+    }
+
+    function renderHistory() {
+      if (historyData.length === 0) {
+        historyTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">Sin datos</td></tr>';
+        return;
+      }
+
+      historyTableBody.innerHTML = historyData.map(record => `
+        <tr>
+          <td>${record.id}</td>
+          <td><span class="badge ${record.valor === 1 ? 'bg-success' : 'bg-danger'}">${record.valor === 1 ? 'ON' : 'OFF'}</span></td>
+          <td>${getRelativeTime(record.tiempo)}</td>
+          <td>${formatDate(record.fecha)}</td>
+          <td>${formatHora(record.hora)}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function sendToggleCommand(valor) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error('WebSocket no está conectado');
+        return;
+      }
+
+      const message = {
+        type: 'set_dout',
+        refId: REF_ID,
+        valor: valor ? 1 : 0
+      };
+
+      ws.send(JSON.stringify(message));
+      console.log('Comando enviado:', message);
+    }
+
+    toggleSwitch.addEventListener('change', async (e) => {
+      if (isUpdating) return;
+      
+      const newState = e.target.checked;
+      await sendToggleCommand(newState);
+    });
+
+    function connect() {
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        console.log('WebSocket conectado');
+        setStatus(true);
+        requestInitialState(); // Solicitar estado inicial
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket desconectado');
+        setStatus(false);
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setStatus(false);
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const payload = JSON.parse(evt.data);
+          
+          // Handle successful toggle response
+          if (payload.type === 'set_dout_response' && payload.success) {
+            console.log('Toggle confirmado:', payload.data);
+            isUpdating = true;
+            updateUI(payload.data.valor);
+            // Agregar a historial con datos completos de la BD
+            addToHistory({
+              id: payload.data.id,
+              valor: payload.data.valor,
+              tiempo: payload.data.tiempo,
+              fecha: new Date().toISOString().split('T')[0],
+              hora: new Date().toTimeString().split(' ')[0]
+            });
+            isUpdating = false;
+          }
+
+          // Handle broadcast of DOUT changes from other clients
+          if (payload.type === 'dout_changed' && payload.refId === REF_ID) {
+            console.log('DOUT cambiado por otro cliente:', payload);
+            isUpdating = true;
+            updateUI(payload.valor);
+            isUpdating = false;
+          }
+
+          // Handle initial state response
+          if (payload.type === 'latest_dout_response' && payload.refId === REF_ID) {
+            console.log('Estado inicial recibido:', payload);
+            if (payload.data) {
+              isUpdating = true;
+              updateUI(payload.data.valor);
+              // Cargar historial inicial si existe
+              addToHistory({
+                id: payload.data.id,
+                valor: payload.data.valor,
+                tiempo: payload.data.tiempo,
+                fecha: payload.data.fecha,
+                hora: payload.data.hora
+              });
+              isUpdating = false;
+            }
+          }
+
+          // Handle error response
+          if (payload.type === 'error') {
+            console.error('Error del servidor:', payload.message);
+            alert('Error: ' + payload.message);
+          }
+        } catch (err) {
+          console.error('Error al parsear mensaje:', err);
+        }
+      };
+    }
+
+    // Request initial state on connection
+    async function requestInitialState() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      
+      ws.send(JSON.stringify({ 
+        type: 'get_latest_dout', 
+        refId: REF_ID 
+      }));
+    }
+
+    // Initialize
+    connect();
+  </script>
 </body>
 </html>
